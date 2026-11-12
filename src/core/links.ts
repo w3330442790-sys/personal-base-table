@@ -1,5 +1,6 @@
 // [[笔记]] 链接:解析单元格值、笔记改名时批量替换。纯函数。
 import { BaseDoc } from "./types";
+import { getSheet, listSheets } from "./workbook";
 
 /** 单元格值整体是 [[目标]] / [[目标|显示]] / [[目标#标题]] 时返回目标与显示文字 */
 export function parseWikiLink(value: unknown): { target: string; label: string } | null {
@@ -25,7 +26,7 @@ export function renameLinks(doc: BaseDoc, oldName: string, newName: string): num
       count++;
       return `[[${newName}`;
     });
-  for (const rec of doc.records) {
+  for (const info of listSheets(doc)) for (const rec of getSheet(doc, info.id).records) {
     for (const [k, v] of Object.entries(rec)) {
       if (k === "id") continue;
       if (typeof v === "string" && v.includes("[[")) rec[k] = swap(v);

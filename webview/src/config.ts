@@ -1,6 +1,7 @@
 import type { FieldDef, FieldType } from "../../src/core/types";
 
 export interface UIConfig {
+  historyLimit?: number;
   rowHeight: "compact" | "medium" | "tall";
   showRowNumbers: boolean;
   fontSize: number; // 0 = 跟随编辑器

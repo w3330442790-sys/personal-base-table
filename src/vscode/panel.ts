@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   readBase,
+  snapshotAdapter,
   updateCell,
   addRow,
   deleteRow,
@@ -17,26 +18,8 @@ import {
   replaceAll,
   deleteField,
 } from "./fsStore";
-import { FieldDef, ViewDef } from "../core/types";
-
-/** Webview → 扩展 的消息 */
-type InMsg =
-  | { type: "ready" }
-  | { type: "updateCell"; id: string; field: string; value: unknown }
-  | { type: "addRow" }
-  | { type: "deleteRow"; id: string }
-  | { type: "saveViews"; views: ViewDef[] }
-  | { type: "renameField"; oldName: string; newName: string }
-  | { type: "setField"; name: string; patch: Partial<FieldDef> }
-  | { type: "addField"; name: string; def: FieldDef; after?: string }
-  | { type: "duplicateField"; name: string }
-  | { type: "reorderFields"; names: string[] }
-  | { type: "moveRow"; id: string; targetId: string }
-  | { type: "moveRowTo"; id: string; targetId: string; before: boolean }
-  | { type: "deleteField"; name: string }
-  | { type: "replaceAll"; doc: { fields: Record<string, FieldDef>; views: ViewDef[]; records: Record<string, unknown>[] } }
-  | { type: "export"; defaultName: string; content: string }
-  | { type: "openLink"; target: string };
+import type { OutMsg as InMsg } from "../../webview/src/host";
+import { SnapshotStore } from "../core/snapshots";
 
 /** 一个 .base 文件就是一个 JSON 文本文档,用自定义编辑器把它渲染成多维表格 */
 export class BaseEditorProvider implements vscode.CustomTextEditorProvider {
@@ -72,7 +55,11 @@ export class BaseTableController {
 
   private readonly file: string;
   /** 记录「自己最近一次写盘」的时刻,用来忽略由此触发的 document 变化,避免破坏乐观更新的丝滑 */
-  private lastWrite = 0;
+  private expectedContent: string;
+  private writing = false;
+  private revision = 0;
+  private messageQueue: Promise<void> = Promise.resolve();
+  private readonly snapshots: SnapshotStore;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -80,6 +67,9 @@ export class BaseTableController {
     private readonly panel: vscode.WebviewPanel
   ) {
     this.file = document.uri.fsPath;
+    this.expectedContent = document.getText();
+    const folder = vscode.workspace.getWorkspaceFolder(document.uri);
+    this.snapshots = new SnapshotStore(snapshotAdapter(folder?.uri.fsPath ?? path.dirname(this.file)));
     panel.webview.options = {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.file(path.join(context.extensionPath, "out", "webview"))],
@@ -87,14 +77,18 @@ export class BaseTableController {
     panel.webview.html = this.getHtml();
 
     const subs: vscode.Disposable[] = [];
-    panel.webview.onDidReceiveMessage((m: InMsg) => this.onMessage(m), null, subs);
+    panel.webview.onDidReceiveMessage((m: InMsg) => {
+      this.messageQueue = this.messageQueue.then(() => this.onMessage(m)).catch(error => {
+        vscode.window.showErrorMessage(`多维表格操作失败: ${(error as Error).message}`);
+      });
+    }, null, subs);
 
     // 文件被外部改动(或我们自己写盘)时:只有「非自己写」的变化才刷新,否则会打断乐观更新
     vscode.workspace.onDidChangeTextDocument(
       (e) => {
         if (e.document.uri.toString() !== document.uri.toString()) return;
-        if (Date.now() - this.lastWrite < 1500) return;
-        this.pushTable();
+        if (this.writing || e.document.getText() === this.expectedContent) return;
+        this.pushTable(true);
       },
       null,
       subs
@@ -123,7 +117,7 @@ export class BaseTableController {
     });
   }
 
-  private onMessage(m: InMsg) {
+  private async onMessage(m: InMsg) {
     try {
       switch (m.type) {
         case "ready":
@@ -152,7 +146,21 @@ export class BaseTableController {
           this.write(() => moveRowTo(this.file, m.id, m.targetId, m.before));
           break;
         case "replaceAll":
+          if (m.baseRevision !== undefined && m.baseRevision !== this.revision) {
+            throw new Error("文件已在外部更改，请重新载入后重试");
+          }
           this.write(() => replaceAll(this.file, m.doc));
+          if (m.requestId) this.panel.webview.postMessage({ type: "operationResult", requestId: m.requestId, revision: this.revision });
+          break;
+        case "snapshotCreate":
+          await this.snapshots.create(m.documentId, m.label, m.doc);
+          this.panel.webview.postMessage({ type: "operationResult", requestId: m.requestId, snapshots: await this.snapshots.list(m.documentId) });
+          break;
+        case "snapshotList":
+          this.panel.webview.postMessage({ type: "operationResult", requestId: m.requestId, snapshots: await this.snapshots.list(m.documentId) });
+          break;
+        case "snapshotRead":
+          this.panel.webview.postMessage({ type: "operationResult", requestId: m.requestId, snapshot: await this.snapshots.read(m.documentId, m.id) });
           break;
         // 需要主进程生成数据(新 id / 连带改动)的操作:写完回推一次
         case "addRow":
@@ -184,7 +192,9 @@ export class BaseTableController {
       }
     } catch (err) {
       vscode.window.showErrorMessage(`多维表格操作失败: ${(err as Error).message}`);
-      this.pushTable(); // 出错才回推纠正
+      if ("requestId" in m && m.requestId) {
+        this.panel.webview.postMessage({ type: "operationResult", requestId: m.requestId, error: (err as Error).message, revision: this.revision });
+      } else this.pushTable(); // Legacy optimistic operations need the committed state.
     }
   }
 
@@ -195,9 +205,14 @@ export class BaseTableController {
 
   /** 包裹写操作:标记写盘时刻,让紧随其后的 document 变化被忽略 */
   private write(fn: () => void) {
-    this.lastWrite = Date.now();
-    fn();
-    this.lastWrite = Date.now();
+    this.writing = true;
+    try {
+      fn();
+      this.expectedContent = fs.readFileSync(this.file, "utf8");
+      this.revision++;
+    } finally {
+      this.writing = false;
+    }
   }
 
   /** [[笔记]]:在工作区里找同名 .md(忽略 #标题),找到就打开 */
@@ -240,9 +255,14 @@ export class BaseTableController {
     };
   }
 
-  private pushTable() {
-    const table = readBase(this.file);
-    this.panel.webview.postMessage({ type: "tableData", table, config: this.getConfig() });
+  private pushTable(external = false) {
+    try {
+      const table = readBase(this.file);
+      if (external) this.revision++;
+      this.panel.webview.postMessage({ type: "tableData", table, config: this.getConfig(), revision: this.revision, external });
+    } catch (error) {
+      vscode.window.showErrorMessage(`读取多维表格失败: ${(error as Error).message}`);
+    }
   }
 
   private getHtml(): string {

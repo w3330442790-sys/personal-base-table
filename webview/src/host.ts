@@ -1,7 +1,8 @@
 // 界面 ↔ 宿主 的消息桥。
 // VS Code:界面跑在 webview 里,用 acquireVsCodeApi().postMessage 和 window message 事件通信(默认)。
 // Obsidian:界面直接挂在视图里,每个视图把自己的 Host 作为 <App host> 传入。
-import type { BaseTable, FieldDef, ViewDef } from "../../src/core/types";
+import type { BaseDoc, BaseTable, FieldDef, ViewDef } from "../../src/core/types";
+import type { Snapshot, SnapshotMetadata } from "../../src/core/snapshots";
 import type { UIConfig } from "./config";
 import { createContext, useContext } from "react";
 
@@ -19,15 +20,20 @@ export type OutMsg =
   | { type: "moveRow"; id: string; targetId: string }
   | { type: "moveRowTo"; id: string; targetId: string; before: boolean }
   | { type: "deleteField"; name: string }
-  | { type: "replaceAll"; doc: { fields: Record<string, FieldDef>; views: ViewDef[]; records: Record<string, unknown>[] } }
+  | { type: "replaceAll"; doc: BaseDoc; requestId?: string; baseRevision?: number }
+  | { type: "snapshotCreate"; requestId: string; documentId: string; label: string; doc: BaseDoc }
+  | { type: "snapshotList"; requestId: string; documentId: string }
+  | { type: "snapshotRead"; requestId: string; documentId: string; id: string }
   | { type: "export"; defaultName: string; content: string }
   | { type: "openLink"; target: string };
 
 export type InMsg =
-  | { type: "tableData"; table: BaseTable; config: UIConfig }
+  | { type: "tableData"; table: BaseTable; config: UIConfig; revision?: number; external?: boolean }
+  | { type: "operationResult"; requestId: string; revision?: number; error?: string; snapshots?: SnapshotMetadata[]; snapshot?: Snapshot }
   | { type: "command"; command: "undo" | "redo" | "addRow" | "export" };
 
 export interface Host {
+  resolveResource?(path: string): string;
   /** 界面 → 宿主 */
   post(msg: OutMsg): void;
   /** 订阅 宿主 → 界面 的消息,返回取消订阅 */

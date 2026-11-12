@@ -1,4 +1,5 @@
 import type { BaseTable, FieldDef, Row } from "../../src/core/types";
+import type { MergeRegion } from "../../src/core/features";
 
 /** 单元格导出文本:多选用「, 」连接,复选用是/空,其余转字符串 */
 export function cellText(value: unknown): string {
@@ -25,16 +26,27 @@ function htmlEscape(s: string): string {
 }
 
 /** 导出为 Excel(HTML 表格形态的 .xls,Excel/WPS 可直接打开) */
-export function toXLS(cols: string[], rows: Row[]): string {
+export function toXLS(cols: string[], rows: Row[], merges: MergeRegion[] = []): string {
   const head = "<tr>" + cols.map((c) => `<th>${htmlEscape(c)}</th>`).join("") + "</tr>";
+  const visibleMerges = merges.filter(merge => {
+    const rowIndexes = merge.rowIds.map(id => rows.findIndex(row => row.id === id));
+    const colIndexes = merge.fields.map(field => cols.indexOf(field));
+    return [rowIndexes, colIndexes].every(indexes => indexes.every((value, i) => value >= 0 && (i === 0 || value === indexes[i - 1] + 1)));
+  });
   const body = rows
-    .map((r) => "<tr>" + cols.map((c) => `<td>${htmlEscape(cellText(r.values[c]))}</td>`).join("") + "</tr>")
+    .map((r) => "<tr>" + cols.map((c) => {
+      const merge = visibleMerges.find(region => region.rowIds.includes(r.id) && region.fields.includes(c));
+      if (!merge) return `<td>${htmlEscape(cellText(r.values[c]))}</td>`;
+      if (merge.rowIds[0] !== r.id || merge.fields[0] !== c) return "";
+      return `<td rowspan="${merge.rowIds.length}" colspan="${merge.fields.length}">${htmlEscape(cellText(merge.display))}</td>`;
+    }).join("") + "</tr>")
     .join("");
   return `<html><head><meta charset="utf-8"></head><body><table border="1">${head}${body}</table></body></html>`;
 }
 
 /** 导出为完整 JSON 文档(fields + views + records) */
 export function toJSONDoc(table: BaseTable): string {
+  if (table.document) return JSON.stringify(table.document, null, 2) + "\n";
   const records = table.rows.map((r) => ({ id: r.id, ...r.values }));
   const doc: { fields: Record<string, FieldDef>; views: unknown; records: unknown } = {
     fields: table.fields,

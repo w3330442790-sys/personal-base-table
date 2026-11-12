@@ -104,9 +104,13 @@ export function addField(doc: BaseDoc, name: string, def: FieldDef, after?: stri
 
 /** 整份覆盖(撤销/重做用) */
 export function replaceAll(doc: BaseDoc, next: Partial<BaseDoc>): void {
-  doc.fields = next.fields ?? {};
-  doc.views = Array.isArray(next.views) ? next.views : [];
-  doc.records = Array.isArray(next.records) ? next.records : [];
+  const replacement = JSON.parse(JSON.stringify(next)) as Partial<BaseDoc>;
+  for (const key of Object.keys(doc)) delete doc[key];
+  Object.assign(doc, replacement, {
+    fields: replacement.fields ?? {},
+    views: Array.isArray(replacement.views) ? replacement.views : [],
+    records: Array.isArray(replacement.records) ? replacement.records : [],
+  });
 }
 
 /** 按给定名字顺序重排字段;未列出的字段按原顺序追加末尾 */

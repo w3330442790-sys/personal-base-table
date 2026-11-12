@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { BaseTable, FieldDef, ViewDef } from "../../src/core/types";
 import { defaultHost, HostContext, type Host } from "./host";
 import { applyView } from "./filter";
@@ -13,10 +13,31 @@ import { ExportModal, type ExportFormat } from "./ExportModal";
 import { toCSV, toJSONDoc, toXLS } from "./export";
 import { Caret, Icon } from "./icons";
 import { defaultConfig, ROW_HEIGHT_PX, type UIConfig } from "./config";
+import { getSheet } from "../../src/core/workbook";
+import { readGridMeta } from "../../src/core/features";
 
 type Panel = "filter" | "sort" | "group" | "fields" | null;
 
-export function App({ host = defaultHost() }: { host?: Host }) {
+export interface TableRenderProps {
+  rows: import("../../src/core/types").Row[];
+  cols: string[];
+  config: UIConfig;
+  colWidths: Record<string, number>;
+  groupField?: string;
+  frozen: number;
+  canReorder: boolean;
+  onHeaderMenu: (col: string, x: number, y: number) => void;
+  onResize: (col: string, width: number) => void;
+  onReorderCols: (from: string, to: string) => void;
+  onAddField: () => void;
+  view: ViewDef;
+}
+
+export function App({ host = defaultHost(), managedHistory, renderTable }: {
+  host?: Host;
+  managedHistory?: { undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean };
+  renderTable?: (props: TableRenderProps) => ReactNode;
+}) {
   const post = host.post;
   const [table, setTable] = useState<BaseTable | null>(null);
   const [config, setConfig] = useState<UIConfig>(defaultConfig);
@@ -49,6 +70,7 @@ export function App({ host = defaultHost() }: { host?: Host }) {
 
   // 变更前记录快照;dedup:同一次操作内重复调用(表引用未变)不重复入栈
   const recordHistory = useCallback(() => {
+    if (managedHistory) return;
     const t = tableRef.current;
     if (!t) return;
     setPast((p) => (p[p.length - 1] === t ? p : [...p.slice(-49), t]));
@@ -56,6 +78,7 @@ export function App({ host = defaultHost() }: { host?: Host }) {
   }, []);
   const toDocMsg = (t: BaseTable) => ({ fields: t.fields, views: t.views, records: t.rows.map((r) => ({ id: r.id, ...r.values })) });
   const undo = useCallback(() => {
+    if (managedHistory) { managedHistory.undo(); return; }
     const p = pastRef.current;
     const t = tableRef.current;
     if (!p.length || !t) return;
@@ -64,8 +87,9 @@ export function App({ host = defaultHost() }: { host?: Host }) {
     setFuture((f) => [t, ...f]);
     setTable(prev);
     post({ type: "replaceAll", doc: toDocMsg(prev) });
-  }, []);
+  }, [managedHistory]);
   const redo = useCallback(() => {
+    if (managedHistory) { managedHistory.redo(); return; }
     const f = futureRef.current;
     const t = tableRef.current;
     if (!f.length || !t) return;
@@ -74,7 +98,7 @@ export function App({ host = defaultHost() }: { host?: Host }) {
     setPast((p) => [...p, t]);
     setTable(next);
     post({ type: "replaceAll", doc: toDocMsg(next) });
-  }, []);
+  }, [managedHistory]);
   // 宿主快捷键命令(在 VS Code「键盘快捷方式」里可改键);输入框里的撤销/重做仍作用于输入框本身
   const addRow = useCallback(() => {
     recordHistory();
@@ -342,8 +366,9 @@ export function App({ host = defaultHost() }: { host?: Host }) {
 
   const handleExport = (format: ExportFormat) => {
     if (!table) return;
-    const baseName = (table.path.split(/[\\/]/).pop() || "table").replace(/\.base$/, "");
-    const content = format === "csv" ? toCSV(cols, rows) : format === "xls" ? toXLS(cols, rows) : toJSONDoc(table);
+    const baseName = (table.path.split(/[\\/]/).pop() || "table").replace(/\.w?base$/, "");
+    const merges = table.document ? readGridMeta(getSheet(table.document, table.sheetId ?? "main")).merges : undefined;
+    const content = format === "csv" ? toCSV(cols, rows) : format === "xls" ? toXLS(cols, rows, merges) : toJSONDoc(table);
     post({ type: "export", defaultName: `${baseName}.${format}`, content });
     setExportOpen(false);
   };
@@ -480,10 +505,10 @@ export function App({ host = defaultHost() }: { host?: Host }) {
             </button>
           ))}
         </div>
-        <button className="tool icon-only" title="撤销 (Cmd/Ctrl+Z)" disabled={!past.length} onClick={undo}>
+        <button className="tool icon-only" title="撤销 (Cmd/Ctrl+Z)" disabled={managedHistory ? !managedHistory.canUndo : !past.length} onClick={undo}>
           <Icon name="undo" size={16} />
         </button>
-        <button className="tool icon-only" title="重做 (Cmd/Ctrl+Shift+Z、Ctrl+Y)" disabled={!future.length} onClick={redo}>
+        <button className="tool icon-only" title="重做 (Cmd/Ctrl+Shift+Z、Ctrl+Y)" disabled={managedHistory ? !managedHistory.canRedo : !future.length} onClick={redo}>
           <Icon name="redo" size={16} />
         </button>
         <button className="tool" title="导出" onClick={() => setExportOpen(true)}>
@@ -492,7 +517,7 @@ export function App({ host = defaultHost() }: { host?: Host }) {
       </div>
 
       <div className="table-wrap">
-        <Table
+        {renderTable ? renderTable({ rows, cols, config: cellConfig, colWidths, groupField: group?.field, frozen, canReorder, onHeaderMenu: openFieldMenu, onResize: (col, width) => updateView({ colWidths: { ...colWidths, [col]: width } }), onReorderCols, onAddField: () => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }, view }) : <Table
           fields={table.fields}
           cols={cols}
           rows={rows}
@@ -509,7 +534,7 @@ export function App({ host = defaultHost() }: { host?: Host }) {
           onResize={(col, w) => updateView({ colWidths: { ...colWidths, [col]: w } })}
           onReorderCols={onReorderCols}
           onAddField={() => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }}
-        />
+        />}
       </div>
 
       {fieldMenu && (

@@ -1,16 +1,16 @@
 {
-  "name": "weilanx-base-table",
+  "name": "personal-base-table",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.18.0",
-  "publisher": "weilanx",
+  "version": "1.0.0",
+  "publisher": "w3330442790-sys",
   "icon": "media/logo.png",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Azure12355/weilanx-base-table.git"
+    "url": "https://github.com/w3330442790-sys/personal-base-table.git"
   },
-  "homepage": "https://azure12355.github.io/weilanx-base-table/",
+  "homepage": "https://github.com/w3330442790-sys/personal-base-table",
   "engines": {
     "vscode": "^1.90.0"
   },

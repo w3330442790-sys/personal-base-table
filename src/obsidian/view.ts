@@ -4,15 +4,17 @@
 import { Notice, Scope, TextFileView, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { createElement } from "react";
 import { createRoot, Root } from "react-dom/client";
-import { App } from "../../webview/src/App";
+import { WorkbookApp } from "../../webview/src/WorkbookApp";
 import type { Host, InMsg, OutMsg } from "../../webview/src/host";
 import type { UIConfig } from "../../webview/src/config";
 import { BaseDoc } from "../core/types";
 import { emptyDoc, parseDoc, serializeDoc, toTable } from "../core/doc";
 import * as ops from "../core/ops";
+import { validateWorkbook } from "../core/workbook";
+import { ObsidianSnapshots } from "./snapshots";
 import type WeilanxBaseTablePlugin from "./main";
 
-export const VIEW_TYPE = "weilanx-base-table";
+export const VIEW_TYPE = "personal-base-table";
 
 export class WbaseView extends TextFileView {
   doc: BaseDoc = emptyDoc();
@@ -22,10 +24,30 @@ export class WbaseView extends TextFileView {
   private broken = false;
   private root: Root | null = null;
   private listeners = new Set<(m: InMsg) => void>();
+  private revision = 0;
+  private messageQueue: Promise<void> = Promise.resolve();
+  private generation = 0;
+  private get snapshots(): ObsidianSnapshots {
+    return new ObsidianSnapshots(this.app.vault, { maxCount: this.plugin.settings.snapshotCount, maxBytes: this.plugin.settings.snapshotMegabytes * 1024 * 1024 });
+  }
 
   /** 每个视图一个宿主,多个表格同时打开互不串消息 */
   private readonly host: Host = {
-    post: (m) => this.onMessage(m),
+    post: (m) => {
+      const generation = this.generation;
+      const file = this.file?.path;
+      this.messageQueue = this.messageQueue.catch(() => {}).then(async () => {
+        if (generation !== this.generation || file !== this.file?.path) {
+          if ("requestId" in m && m.requestId) this.emit({ type: "operationResult", requestId: m.requestId, error: "文件已切换，原操作已取消" });
+          return;
+        }
+        await this.onMessage(m);
+      });
+    },
+    resolveResource: (path) => {
+      const target = this.app.metadataCache.getFirstLinkpathDest(path.replace(/^!\[\[|\]\]$/g, ""), this.file?.path ?? "");
+      return target ? this.app.vault.getResourcePath(target) : "";
+    },
     subscribe: (handler) => {
       this.listeners.add(handler);
       return () => this.listeners.delete(handler);
@@ -58,6 +80,7 @@ export class WbaseView extends TextFileView {
   }
 
   async onClose(): Promise<void> {
+    this.generation++;
     this.root?.unmount();
     this.root = null;
     this.listeners.clear();
@@ -68,6 +91,8 @@ export class WbaseView extends TextFileView {
   setViewData(data: string, clear: boolean): void {
     if (!clear && data === this.lastText) return; // 自己刚保存的内容,界面已是最新
     this.lastText = data;
+    this.generation++;
+    this.revision++;
     try {
       this.doc = parseDoc(data, true);
       this.broken = false;
@@ -77,7 +102,7 @@ export class WbaseView extends TextFileView {
       return;
     }
     if (clear || !this.root) this.mount();
-    else this.push();
+    else this.push(true);
   }
 
   getViewData(): string {
@@ -87,6 +112,8 @@ export class WbaseView extends TextFileView {
   }
 
   clear(): void {
+    this.generation++;
+    this.revision++;
     this.doc = emptyDoc();
     this.lastText = "";
   }
@@ -100,7 +127,7 @@ export class WbaseView extends TextFileView {
     el.style.height = "100%";
     this.root = createRoot(el);
     // key 随文件变化,切换文件时界面状态(撤销历史、选中行)整体重置
-    this.root.render(createElement(App, { host: this.host, key: this.file?.path ?? "" }));
+    this.root.render(createElement(WorkbookApp, { host: this.host, key: this.file?.path ?? "" }));
   }
 
   private showError(err: Error): void {
@@ -122,9 +149,9 @@ export class WbaseView extends TextFileView {
   }
 
   /** 把当前文档推给界面 */
-  push(): void {
+  push(external = false): void {
     if (this.broken || !this.file) return;
-    this.emit({ type: "tableData", table: toTable(this.doc, this.file.path), config: this.config() });
+    this.emit({ type: "tableData", table: toTable(this.doc, this.file.path), config: this.config(), revision: this.revision, external });
   }
 
   /** 宿主命令(撤销 / 重做 / 新增 / 导出),返回 false 阻止默认按键行为 */
@@ -135,15 +162,29 @@ export class WbaseView extends TextFileView {
 
   /** 外部(如笔记改名同步)直接修改文档后调用 */
   applyExternal(fn: (doc: BaseDoc) => void): void {
+    this.generation++;
     fn(this.doc);
     this.requestSave();
-    this.push();
+    this.revision++;
+    this.push(true);
   }
 
-  private onMessage(m: OutMsg): void {
+  private async onMessage(m: OutMsg): Promise<void> {
     const d = this.doc;
     try {
       switch (m.type) {
+        case "snapshotCreate": {
+          if (this.broken) throw new Error("当前文件无法解析，暂时无法创建快照");
+          await this.snapshots.create(m.documentId, m.label, m.doc);
+          this.emit({ type: "operationResult", requestId: m.requestId, snapshots: await this.snapshots.list(m.documentId) });
+          return;
+        }
+        case "snapshotList":
+          this.emit({ type: "operationResult", requestId: m.requestId, snapshots: await this.snapshots.list(m.documentId) });
+          return;
+        case "snapshotRead":
+          this.emit({ type: "operationResult", requestId: m.requestId, snapshot: await this.snapshots.read(m.documentId, m.id) });
+          return;
         case "ready":
           this.push();
           return;
@@ -179,8 +220,23 @@ export class WbaseView extends TextFileView {
           ops.moveRowTo(d, m.id, m.targetId, m.before);
           break;
         case "replaceAll":
-          ops.replaceAll(d, m.doc);
-          break;
+          if (this.broken) throw new Error("当前文件无法解析，保存已停止");
+          if (m.baseRevision !== undefined && m.baseRevision !== this.revision) throw new Error("文件已被外部更新，请重新载入后重试");
+          validateWorkbook(m.doc);
+          {
+            const previous = this.doc;
+            const generation = this.generation;
+            this.doc = parseDoc(serializeDoc(m.doc), true);
+            try { await this.save(); }
+            catch (error) {
+              if (generation === this.generation) { this.doc = previous; this.lastText = serializeDoc(previous); }
+              throw error;
+            }
+            if (generation !== this.generation) throw new Error("文件已切换或更新，原操作已取消");
+          }
+          this.revision++;
+          if (m.requestId) this.emit({ type: "operationResult", requestId: m.requestId, revision: this.revision });
+          return;
         // 需要生成新数据(id / 字段名)的操作:改完回推一次
         case "addRow":
           ops.addRow(d);
@@ -205,6 +261,10 @@ export class WbaseView extends TextFileView {
       }
       this.requestSave();
     } catch (err) {
+      if ("requestId" in m && m.requestId) {
+        this.emit({ type: "operationResult", requestId: m.requestId, error: (err as Error).message });
+        return;
+      }
       new Notice(`多维表格操作失败: ${(err as Error).message}`);
       this.push(); // 出错才回推纠正
     }

@@ -6,6 +6,9 @@ import { parseDoc, serializeDoc, starterDoc } from "../core/doc";
 import { renameLinks } from "../core/links";
 
 interface Settings {
+  historyLimit: number;
+  snapshotCount: number;
+  snapshotMegabytes: number;
   rowHeight: UIConfig["rowHeight"];
   showRowNumbers: boolean;
   fontSize: number;
@@ -16,6 +19,9 @@ interface Settings {
 }
 
 const DEFAULTS: Settings = {
+  historyLimit: 100,
+  snapshotCount: 30,
+  snapshotMegabytes: 100,
   rowHeight: "medium",
   showRowNumbers: true,
   fontSize: 0,
@@ -76,7 +82,7 @@ export default class WeilanxBaseTablePlugin extends Plugin {
 
   uiConfig(): UIConfig {
     const { rowHeight, showRowNumbers, fontSize, colorfulTags, wrapText } = this.settings;
-    return { rowHeight, showRowNumbers, fontSize, colorfulTags, wrapText };
+    return { rowHeight, showRowNumbers, fontSize, colorfulTags, wrapText, historyLimit: this.settings.historyLimit };
   }
 
   async loadSettings(): Promise<void> {
@@ -146,6 +152,14 @@ class SettingsTab extends PluginSettingTab {
     containerEl.empty();
     const s = this.plugin.settings;
     const save = () => this.plugin.saveSettings();
+    for (const option of [
+      { key: "historyLimit" as const, name: "撤销历史步数", max: 1000 },
+      { key: "snapshotCount" as const, name: "每文件保留快照数量", max: 1000 },
+      { key: "snapshotMegabytes" as const, name: "每文件快照容量上限（MB）", max: 10000 },
+    ]) new Setting(containerEl).setName(option.name).addText(input => input.setValue(String(s[option.key])).onChange(value => {
+      const number = Number(value);
+      if (Number.isSafeInteger(number) && number >= 1 && number <= option.max) { s[option.key] = number; void save(); }
+    }));
 
     new Setting(containerEl)
       .setName(t("默认行高", "Default row height"))

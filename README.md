@@ -1,238 +1,60 @@
-<div align="right">
-  <details>
-    <summary>🌐 Language</summary>
-    <div>
-      <div align="right">
-        <p><a href="./README.md">English</a></p>
-        <p><a href="./README.zh-CN.md">简体中文</a></p>
-      </div>
-    </div>
-  </details>
-</div>
+# 我的多维表格 · Personal Base Table
 
-<h1 align="center">
-  <a href="https://github.com/Azure12355/weilanx-base-table/releases">
-    <img src="./media/logo.png" width="150" height="150" alt="Weilanx Base Table" /><br>
-  </a>
-</h1>
+Obsidian 个人多维表格插件，基于 [Weilanx Base Table](https://github.com/Azure12355/weilanx-base-table) 开发，兼容原有 `.wbase` 表格。
 
-<p align="center">English | <a href="./README.zh-CN.md">中文</a> | <a href="https://azure12355.github.io/weilanx-base-table/">Official Site</a> | <a href="#-install-with-an-ai-agent">For Agents</a> | <a href="#-quick-start">Quick Start</a> | <a href="#-file-format">File Format</a> | <a href="#-development">Development</a> | <a href="https://github.com/Azure12355/weilanx-base-table/issues">Feedback</a><br></p>
+## 使用 BRAT 安装
 
-<div align="center">
+1. 在每台设备的 Obsidian 中安装并启用 BRAT。
+2. 打开 BRAT 设置，选择 **Add beta plugin**。
+3. 输入 `w3330442790-sys/personal-base-table`，选择最新版本并安装。
+4. 关闭原来的 **Weilanx Base Table**，启用 **我的多维表格**。
+5. 打开已有 `.wbase` 文件即可使用。后续版本可以通过 BRAT 检查更新。
 
-[![][vscode-shield]][vscode-link]
-[![][typescript-shield]][typescript-link]
-[![][react-shield]][react-link]
-[![][obsidian-shield]][obsidian-link]
-[![][i18n-shield]][i18n-link]
+插件支持桌面与移动端安装。当前版本已经完成 Windows 桌面验收，手机端尚未实机验证。
 
-</div>
-<div align="center">
+BRAT 负责插件安装和更新，表格文件需要通过自己的 Obsidian 库同步方式同步到其他设备。
 
-[![][release-shield]][release-link]
-[![][stars-shield]][stars-link]
-[![][issues-shield]][issues-link]
-[![][license-shield]][license-link]
-[![][pr-shield]][pr-link]
+## 功能
 
-</div>
+- Excel 式底部工作表标签，每张表独立保存字段、记录和视图。
+- 查找替换，支持单列、选区、当前表和整个工作簿。
+- 行插入、复制、批量填充、清空与跨表移动。
+- 多级父子行、按后续 N 行建立归属、折叠和叶子行汇总。
+- 区域复制粘贴与预览，支持 Excel/WPS 多行多列内容。
+- 合并与取消合并单元格，保留原值供恢复。
+- 条件格式、行详情、图片和附件预览。
+- 表格与父子行模板，历史快照、差异预览及恢复。
+- 文件级撤销与重做，覆盖整列删除等结构操作。
+- 保留原有筛选、排序、分组、多视图、字段设置与导出能力。
 
-# 📊 Weilanx Base Table
+## 数据兼容与恢复
 
-Weilanx Base Table turns a single `.wbase` file into a **multidimensional table** (think Airtable / Feishu Base) with multiple views, filters, sorting, grouping and inline editing. It runs in **VS Code** (and Cursor, Windsurf) and in **Obsidian** on desktop and mobile, and both open the same file.
+主表继续使用原来的 `fields`、`views` 和 `records`。附加工作表位于 `personal`，层级、合并和显示设置位于 `personalGrid`。新增功能使用后，请继续通过个人版编辑，以完整保存这些扩展信息。
 
-Under the hood a `.wbase` file is **plain JSON**: one structured document holding fields, views and records. Humans get a spreadsheet-like UI; AI agents get a file they can read in one `JSON.parse` and edit with a few lines of code.
+历史快照位于库内 `.personal-base-table-history`。默认每文件保留 30 份，容量上限 100 MB，可在插件设置修改。保存失败时可重试或导出待保存副本。
 
-❤️ Like it? Give it a star 🌟 — it helps a lot!
+## 手动安装
 
-# 🌠 Screenshot
+从 [Releases](https://github.com/w3330442790-sys/personal-base-table/releases/latest) 下载 `main.js`、`manifest.json` 和 `styles.css`，放入库内 `.obsidian/plugins/personal-base-table`，再启用插件。
 
-![Grid view](./media/readme/grid.png)
+## 当前边界
 
-![Group by field](./media/readme/group.png)
+- 拖动填充向下扩展，序列模式按数字加一或日期递增一天。
+- 合并区域需要取消合并后再执行查找替换。涉及纵向合并的排序会提示先拆分。
+- 历史差异每张表显示前 100 项，并显示全部差异数量。
+- CSV 导出普通单元格，Excel HTML `.xls` 支持合并区域，JSON 导出完整工作簿。
 
-![Multi-select and copy](./media/readme/select.png)
+## 开发
 
-# 🌟 Key Features
-
-1. **Views**:
-
-- 🗂 Multiple views per table — create, duplicate, rename, delete, drag to reorder tabs
-- 🔍 Filters with multiple conditions (AND / OR) and 16 operators
-- ↕️ Multi-field sorting
-- 📁 Collapsible grouping by any field
-- ❄️ Frozen columns, adjustable row height (compact / medium / tall)
-
-2. **Fields**:
-
-- 🔤 8 field types: text, long text, single select, multi select, date, number, checkbox, link
-- 🎨 Colored option tags that follow your VS Code theme
-- 📅 5 date formats; number formats (plain / percent / currency) with precision and thousands separators
-- ↔️ Resize, drag to reorder, hide, duplicate and align columns from a unified field panel
-
-3. **Editing**:
-
-- ✏️ Inline editing with optimistic updates — no flicker, saved to disk instantly
-- ☑️ Hover a row number to multi-select, Shift-click for ranges, select all from the header
-- 📋 `Cmd/Ctrl+C` copies selected records as TSV + HTML — pastes cleanly into Excel, Google Sheets, Feishu, WPS
-- ↩️ Undo / redo (`Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`, `Ctrl+Y`), batch delete in one undo step
-- 🖱 Drag rows to reorder, click a truncated cell to see its full content
-
-4. **VS Code Integration**:
-
-- 📂 A dedicated sidebar lists every `.wbase` file in your workspace
-- ⌨️ All shortcuts are real VS Code keybindings — rebind them in Keyboard Shortcuts
-- 🌐 English and Simplified Chinese UI, following your VS Code display language
-- 📤 Export to CSV, Excel (`.xls`) or full JSON
-- 🎨 Custom file icon (with Material Icon Theme support)
-
-5. **Obsidian**:
-
-- 📱 Same table UI on desktop and mobile, following your Obsidian theme (light, dark and community themes)
-- 🔗 `[[Note]]` links in cells open the note; renaming a note updates the links in every table
-- ⌨️ `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` work inside the table without taking over global hotkeys
-- 🛟 A broken file (sync conflict, bad hand edit) shows an error instead of being overwritten
-
-6. **Agent Friendly**:
-
-- 🤖 Single-file JSON with a stable `id` per record — trivial for AI agents to read and write
-- 🔄 External edits to the file are picked up live by the open table
-
-# 🤖 Install with an AI Agent
-
-Most people let their coding agent do it. Paste this into **Claude Code**, **Codex**, **Cursor** or any agent with a terminal:
-
-```text
-Install the Weilanx Base Table plugin for me (VS Code / Obsidian).
-Follow https://github.com/Azure12355/weilanx-base-table/blob/main/docs/install-for-agents.md
-and verify the install before reporting back.
-```
-
-Or run the installer yourself (macOS / Linux). It finds VS Code, Cursor, Windsurf and Insiders, installs into each, and verifies the result:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Azure12355/weilanx-base-table/main/scripts/install.sh | bash
-```
-
-For Obsidian, pass your vault path:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Azure12355/weilanx-base-table/main/scripts/install.sh | bash -s -- --obsidian "/path/to/vault"
-```
-
-> Only one editor? Add `BT_EDITOR=cursor` before `bash`. Agent-oriented steps, verification and troubleshooting live in [`docs/install-for-agents.md`](./docs/install-for-agents.md).
-
-# 🚀 Quick Start
-
-**VS Code**
-
-1. Download [`weilanx-base-table.vsix`](https://github.com/Azure12355/weilanx-base-table/releases/latest/download/weilanx-base-table.vsix) from the latest release, or build it yourself (see [Development](#-development)).
-2. In VS Code: Extensions panel → `···` → **Install from VSIX...**, or run `code --install-extension weilanx-base-table.vsix --force`
-3. Open any `.wbase` file (try [`examples/选题库.wbase`](./examples/选题库.wbase)) or run **Base Table: Create Base Table (.wbase)** from the Command Palette.
-
-**Obsidian**
-
-1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/Azure12355/weilanx-base-table/releases/latest) into `<vault>/.obsidian/plugins/weilanx-base-table/`, or install with [BRAT](https://github.com/TfTHacker/obsidian42-brat) using `Azure12355/weilanx-base-table`.
-2. Enable **Weilanx Base Table** under Settings → Community plugins.
-3. Open any `.wbase` file, or run **Create new base table** from the command palette.
-
-> **Why `.wbase`?** Obsidian's core Bases plugin owns the `.base` extension. Older `.base` tables still open in VS Code; right-click one and choose **Convert to .wbase** to use it in Obsidian too.
-
-# 📄 File Format
-
-A `.wbase` file is a JSON document like this:
-
-```json
-{
-  "fields": {
-    "Title":  { "type": "text", "primary": true },
-    "Status": { "type": "select", "options": ["Todo", "Doing", "Done"],
-                "colors": { "Todo": "gray", "Doing": "blue", "Done": "green" } },
-    "Tags":   { "type": "multi", "options": ["Docs", "Bug", "Feature"] },
-    "Due":    { "type": "date" },
-    "Notes":  { "type": "longtext" }
-  },
-  "views": [
-    { "name": "All" },
-    { "name": "Todo", "filters": [{ "field": "Status", "op": "is", "value": "Todo" }] },
-    { "name": "Done", "filters": [{ "field": "Status", "op": "is", "value": "Done" }],
-      "sorts": [{ "field": "Due", "dir": "desc" }] }
-  ],
-  "records": [
-    { "id": "r_001", "Title": "Write the README", "Status": "Done",
-      "Tags": ["Docs"], "Due": "2026-10-05", "Notes": "Follow the Cherry Studio layout." }
-  ]
-}
-```
-
-- **Field types**: `text` · `longtext` · `select` · `multi` · `date` · `number` · `checkbox` · `link`
-- **Records** carry a stable `id`; every other key is a field value. Empty values are omitted.
-- **Primary field** (`primary: true`) is a normal field marked as the title column; it cannot be deleted.
-- **Filter ops**: `is` `isNot` `contains` `notContains` `empty` `notEmpty` `before` `after` `eq` `ne` `gt` `lt` `gte` `lte` `checked` `unchecked`
-- **Sort dir**: `asc` / `desc`
-
-# ⚙️ Settings
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| `baseTable.rowHeight` | `medium` | Default row height: `compact` / `medium` / `tall` |
-| `baseTable.showRowNumbers` | `true` | Show the row number column |
-| `baseTable.fontSize` | `0` | Cell font size in px, `0` follows the editor |
-| `baseTable.colorfulTags` | `true` | Colored tags for select options |
-| `baseTable.wrapText` | `false` | Wrap text in cells instead of truncating |
-
-# 🔧 Development
-
-```bash
-npm install
-npm run build        # webview (vite) + extension (esbuild)
-npm test             # data layer unit tests
+```sh
+npm ci
+npm test
 npm run typecheck
-
-npm run package            # build + produce weilanx-base-table.vsix
-npm run build:obsidian     # Obsidian plugin -> dist/obsidian/{main.js,manifest.json,styles.css}
-npm run dev:obsidian -- --out "/path/to/vault/.obsidian/plugins/weilanx-base-table"   # rebuild on change
+npm run build:obsidian
 ```
 
-Press **F5** in VS Code to launch an Extension Development Host, then open `examples/选题库.wbase`.
+安装文件输出到 `dist/obsidian`。详细操作见 [使用说明](README.personal.zh-CN.md)。
 
-Code layout: `src/core` (format and edit operations, shared), `webview/src` (table UI, shared), `src/vscode` and `src/obsidian` (host shells).
+## 上游与许可证
 
-# 📝 Roadmap
-
-- 🗃 Kanban, calendar and gallery views
-- 🔗 Linked records across tables
-- 🧮 Formula fields
-- 🌐 Localize the in-table UI (toolbar, panels) in English
-- 📝 Embed a table in a note with `![[table.wbase]]` (Obsidian)
-- 🏪 Publish to the Obsidian community plugin directory
-
-# 🤝 Contributing
-
-Issues and pull requests are welcome! Please run `npm test` and `npm run typecheck` before submitting a PR.
-
-# 📜 License
-
-[MIT](./LICENSE) © Azure12355
-
-<!-- badges -->
-[vscode-shield]: https://img.shields.io/badge/VS%20Code-%5E1.90-007ACC?logo=visualstudiocode&logoColor=white
-[vscode-link]: https://code.visualstudio.com/
-[typescript-shield]: https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white
-[typescript-link]: https://www.typescriptlang.org/
-[react-shield]: https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black
-[react-link]: https://react.dev/
-[obsidian-shield]: https://img.shields.io/badge/Obsidian-1.5%2B-7C3AED?logo=obsidian&logoColor=white
-[obsidian-link]: https://obsidian.md/
-[i18n-shield]: https://img.shields.io/badge/i18n-English%20%7C%20中文-0088CC
-[i18n-link]: ./README.zh-CN.md
-[release-shield]: https://img.shields.io/github/v/release/Azure12355/weilanx-base-table?logo=github
-[release-link]: https://github.com/Azure12355/weilanx-base-table/releases
-[stars-shield]: https://img.shields.io/github/stars/Azure12355/weilanx-base-table?logo=github
-[stars-link]: https://github.com/Azure12355/weilanx-base-table/stargazers
-[issues-shield]: https://img.shields.io/github/issues/Azure12355/weilanx-base-table?logo=github
-[issues-link]: https://github.com/Azure12355/weilanx-base-table/issues
-[license-shield]: https://img.shields.io/badge/License-MIT-green.svg
-[license-link]: ./LICENSE
-[pr-shield]: https://img.shields.io/badge/PRs-welcome-FF6699.svg
-[pr-link]: https://github.com/Azure12355/weilanx-base-table/pulls
+本项目由 `w3330442790-sys` 维护，基于 Azure12355 的 Weilanx Base Table 0.18.0。上游 MIT 许可证和作者归属保留于 [LICENSE](LICENSE)。原项目说明保留于 [README.upstream.md](README.upstream.md) 和 [README.upstream.zh-CN.md](README.upstream.zh-CN.md)。

@@ -86,6 +86,9 @@ export interface Row {
 }
 
 export interface BaseTable {
+  sheetId?: string;
+  /** Complete document for workbook hosts and lossless JSON exports. */
+  document?: BaseDoc;
   /** .base 文件绝对路径 */
   path: string;
   fields: Record<string, FieldDef>;
@@ -95,6 +98,7 @@ export interface BaseTable {
 
 /** 磁盘上的 JSON 文档形态:records 为扁平对象数组(含 id) */
 export interface BaseDoc {
+  [key: string]: unknown;
   fields: Record<string, FieldDef>;
   views: ViewDef[];
   records: Record<string, unknown>[];

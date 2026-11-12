@@ -43,7 +43,12 @@ export function parseDoc(text: string, strict = false): BaseDoc {
     if (strict) throw err;
     return emptyDoc();
   }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+    if (strict) throw new Error("表格文件必须包含 JSON 对象");
+    return emptyDoc();
+  }
   return {
+    ...doc,
     fields: doc.fields && typeof doc.fields === "object" ? doc.fields : {},
     views: Array.isArray(doc.views) ? doc.views : [],
     records: Array.isArray(doc.records) ? doc.records : [],
@@ -57,13 +62,14 @@ export function serializeDoc(doc: BaseDoc): string {
 
 /** 文档 → 界面用的表格。缺视图时用「全部」视图兜底 */
 export function toTable(doc: BaseDoc, path: string): BaseTable {
+  doc = JSON.parse(JSON.stringify(doc)) as BaseDoc;
   let views = doc.views.map(normalizeView);
   if (views.length === 0) views = [{ name: "全部" }];
   const rows: Row[] = doc.records.map((rec, i) => {
     const { id, ...values } = rec as { id?: unknown } & Record<string, unknown>;
     return { id: typeof id === "string" && id ? id : `_row${i}`, values };
   });
-  return { path, fields: doc.fields, views, rows };
+  return { path, fields: doc.fields, views, rows, document: doc };
 }
 
 /** 新建表格的起始内容:一个主字段 + 一个带配色的状态字段 + 「全部」视图 */
