@@ -52,6 +52,9 @@ export interface ToolbarControls {
   toggleWrap: () => void;
   freezeColumn: (field: string | undefined) => void;
   setRowHeight: (height: UIConfig["rowHeight"]) => void;
+  views: { name: string }[];
+  viewIndex: number;
+  selectView: (index: number) => void;
 }
 
 export function App({ host = defaultHost(), managedHistory, renderTable, worksheetMode = false, renderToolbar }: {
@@ -468,9 +471,7 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
         </button>
       </div>}
 
-      {worksheetMode && views.length > 1 && <label className="saved-view-selector">已有筛选方案<select aria-label="已有筛选方案" value={idx} onChange={event => setViewIdx(Number(event.target.value))}>{views.map((saved, index) => <option key={index} value={index}>{saved.name}</option>)}</select></label>}
-
-      {renderToolbar?.({ addRow, addField: () => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }, undo, redo, canUndo: managedHistory ? managedHistory.canUndo : !!past.length, canRedo: managedHistory ? managedHistory.canRedo : !!future.length, filter: () => togglePanel("filter"), sort: () => togglePanel("sort"), group: () => togglePanel("group"), fields: () => togglePanel("fields"), export: () => setExportOpen(true), toggleWrap: () => updateView({ wrapText: !cellConfig.wrapText }), freezeColumn: field => updateView({ frozen: field ? Math.max(0, cols.indexOf(field) + 1) : 0 }), setRowHeight: setRowHOverride })}
+      {renderToolbar?.({ addRow, addField: () => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }, undo, redo, canUndo: managedHistory ? managedHistory.canUndo : !!past.length, canRedo: managedHistory ? managedHistory.canRedo : !!future.length, filter: () => togglePanel("filter"), sort: () => togglePanel("sort"), group: () => togglePanel("group"), fields: () => togglePanel("fields"), export: () => setExportOpen(true), toggleWrap: () => updateView({ wrapText: !cellConfig.wrapText }), freezeColumn: field => updateView({ frozen: field ? Math.max(0, cols.indexOf(field) + 1) : 0 }), setRowHeight: setRowHOverride, views: views.map(view => ({ name: view.name })), viewIndex: idx, selectView: setViewIdx })}
       <div className={renderToolbar ? "ribbon-popover-host" : "toolbar"}>
         <button className="tool primary" onClick={addRow}>
           <Icon name="add" size={15} className="tool-ico" />新增记录
@@ -548,7 +549,7 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
         </button>
       </div>
 
-      <div className="table-wrap">
+      <div className={renderTable ? "table-wrap personal-table-wrap" : "table-wrap"}>
         {renderTable ? renderTable({ rows, cols, config: cellConfig, colWidths, groupField: group?.field, frozen, canReorder, onHeaderMenu: openFieldMenu, onResize: (col, width) => updateView({ colWidths: { ...colWidths, [col]: width } }), onResizeColumns: widths => updateView({ colWidths: { ...colWidths, ...widths } }), onReorderCols, onAddField: () => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }, view }) : <Table
           fields={table.fields}
           cols={cols}

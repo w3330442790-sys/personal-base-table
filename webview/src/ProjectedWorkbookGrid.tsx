@@ -25,5 +25,5 @@ export function ProjectedWorkbookGrid(props: GridProps & { view: ViewDef }) {
   const rows = useMemo(() => deriveRows(calculatedSheet(props.sheet), props.view), [props.sheet, props.view]);
   return <StableGrid sheet={props.sheet} rows={rows} cols={props.cols} config={props.config} colWidths={props.colWidths}
     frozen={props.frozen} viewId={props.viewId} groupField={props.groupField} canReorder={props.canReorder}
-    command={props.command} {...callbacks} />;
+    command={props.command} sequence={props.sequence} onSequenceChange={props.onSequenceChange} {...callbacks} />;
 }

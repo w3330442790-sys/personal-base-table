@@ -1,27 +1,133 @@
-.workbook-ribbon { flex: 0 0 auto; border-bottom: 1px solid var(--bt-border); background: var(--bt-header-solid); }
-.ribbon-tabs { display: flex; align-items: center; gap: 5px; padding: 5px 10px 0; flex-wrap: wrap; }
-.ribbon-tabs strong { margin-right: 14px; font-size: 13px; }
-.ribbon-tabs button { padding: 5px 12px; color: inherit; border: none; border-bottom: 3px solid transparent; background: transparent; cursor: pointer; }
-.ribbon-tabs button[aria-selected=true] { border-bottom-color: var(--bt-accent); color: var(--bt-accent); font-weight: 600; }
-.ribbon-tabs input[type=search] { margin-left: auto; width: 150px; min-width: 90px; padding: 4px 7px; color: inherit; background: var(--vscode-input-background, transparent); border: 1px solid var(--bt-border); border-radius: 5px; }
-.ribbon-status { margin-left: 8px; color: var(--bt-muted); font-size: 11px; }
-.ribbon-groups { display: flex; align-items: stretch; gap: 6px; padding: 7px 8px; min-height: 72px; overflow-x: auto; }
-.ribbon-group { display: flex; flex-direction: column; justify-content: space-between; gap: 5px; border-right: 1px solid var(--bt-border); padding: 0 10px 0 3px; flex-shrink: 0; }
-.ribbon-group>div { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; max-width: 330px; }
-.ribbon-group small { display: block; text-align: center; font-size: 10px; color: var(--bt-muted); }
-.ribbon-groups button { padding: 5px 8px; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; min-height: 28px; white-space: nowrap; }
-.ribbon-groups button:hover { border-color: var(--bt-border); background: var(--bt-hover); }
-.ribbon-groups button[aria-pressed=true] { border-color: var(--bt-accent); color: var(--bt-accent); background: var(--bt-hover); }
-.ribbon-groups button:disabled { opacity: .4; cursor: default; }
-.ribbon-color { display: flex; align-items: center; gap: 3px; padding: 2px 5px; font-size: 11px; }
-.ribbon-color input[type=color] { width: 24px; height: 24px; padding: 0; border: 0; background: transparent; cursor: pointer; }
-.ribbon-search-results { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.ribbon-formula-bar { display: flex; align-items: center; gap: 8px; background: var(--vscode-editor-background, transparent); border-top: 1px solid var(--bt-border); padding: 4px 10px; }
-.ribbon-formula-bar output { min-width: 72px; max-width: 140px; padding-right: 8px; border-right: 1px solid var(--bt-border); text-align: center; font-size: 12px; }
-.ribbon-formula-bar>span { color: var(--bt-muted); font-style: italic; font-family: serif; }
-.ribbon-formula-bar input { flex: 1; min-width: 60px; border: 0; outline: none; box-shadow: none; padding: 4px; font: inherit; color: inherit; background: transparent; }
-.ribbon-popover-host { position: relative; z-index: 35; height: 0; }
+/* 紧凑功能区:顶部标签栏 + 单行命令 + 编辑栏,贴近 Excel 的简化功能区 */
+.workbook-ribbon {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--bt-border);
+  background: var(--bt-header-solid);
+  color: var(--vscode-foreground, inherit);
+}
+
+/* ---------- 标签栏 ---------- */
+.ribbon-bar { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 6px; }
+.ribbon-tabs { display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.ribbon-tabs::-webkit-scrollbar { display: none; }
+.ribbon-tabs button {
+  height: 30px; padding: 0 11px; border: 0; border-bottom: 2px solid transparent;
+  border-radius: 0; background: transparent; color: inherit; font-size: 12px;
+  white-space: nowrap; cursor: pointer; opacity: .82;
+}
+.ribbon-tabs button:hover { background: var(--bt-hover); opacity: 1; }
+.ribbon-tabs button[aria-selected=true] { border-bottom-color: var(--bt-accent); color: var(--bt-accent); font-weight: 600; opacity: 1; }
+.ribbon-bar-tools { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.ribbon-icon-button {
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
+  padding: 0; border: 1px solid transparent; border-radius: 3px; background: transparent; color: inherit; cursor: pointer;
+}
+.ribbon-icon-button:hover { background: var(--bt-hover); border-color: var(--bt-border-soft); }
+.ribbon-search { display: flex; align-items: center; gap: 4px; }
+.ribbon-search input {
+  width: 150px; height: 22px; padding: 0 6px; border: 1px solid var(--bt-border); border-radius: 3px;
+  background: var(--vscode-input-background, transparent); color: inherit; font-size: 12px; outline: none;
+}
+.ribbon-search input:focus { border-color: var(--bt-accent); }
+.ribbon-view { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--bt-muted); }
+.ribbon-view select {
+  max-width: 120px; height: 22px; padding: 0 2px; border: 1px solid var(--bt-border); border-radius: 3px;
+  background: var(--bt-header-solid); color: inherit; font-size: 11px;
+}
+
+/* ---------- 命令区 ---------- */
+.ribbon-groups-wrap { display: flex; align-items: stretch; border-top: 1px solid var(--bt-border-soft); }
+.ribbon-groups {
+  display: flex; align-items: stretch; flex: 1; min-width: 0; padding: 2px 4px; height: 50px;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.ribbon-groups::-webkit-scrollbar { display: none; }
+.ribbon-group { display: flex; flex: 0 0 auto; align-items: center; padding: 0 4px; border-right: 1px solid var(--bt-border-soft); }
+.ribbon-group:last-child { border-right: 0; }
+.ribbon-group-body { display: flex; align-items: center; gap: 1px; }
+.ribbon-more-button {
+  flex: 0 0 auto; width: 32px; border: 0; border-left: 1px solid var(--bt-border-soft);
+  background: transparent; color: inherit; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.ribbon-more-button:hover { background: var(--bt-hover); }
+.ribbon-more-panel {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 6px;
+  width: 340px; padding: 6px;
+  background: var(--bt-header-solid); color: inherit;
+  border: 1px solid var(--bt-border); border-radius: 6px; box-shadow: 0 6px 24px #0004;
+  font-size: 12px;
+}
+.ribbon-more-panel section { margin: 0 0 2px; min-width: 0; }
+.ribbon-more-panel section:last-child { margin-bottom: 0; }
+.ribbon-more-panel section > small { display: block; padding: 3px 8px 2px; color: var(--bt-muted); font-size: 10px; }
+.ribbon-more-panel button {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px;
+  border: 0; border-radius: 4px; background: transparent; color: inherit; text-align: left;
+  font-size: 12px; cursor: pointer;
+}
+.ribbon-more-panel button:hover { background: var(--bt-hover); }
+.ribbon-more-panel button:disabled { opacity: .4; cursor: default; }
+.ribbon-command {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  min-width: 38px; height: 41px; padding: 2px 5px;
+  border: 1px solid transparent; border-radius: 3px; background: transparent;
+  color: inherit; font-size: 11px; line-height: 1; white-space: nowrap; cursor: pointer;
+}
+.ribbon-command:hover { border-color: var(--bt-border); background: var(--bt-hover); }
+.ribbon-command[aria-pressed=true] {
+  border-color: color-mix(in srgb, var(--bt-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--bt-accent) 12%, transparent);
+  color: var(--bt-accent);
+}
+.ribbon-command:disabled { opacity: .38; cursor: default; background: transparent; border-color: transparent; }
+.ribbon-command-icon { display: flex; align-items: center; justify-content: center; height: 16px; position: relative; }
+.ribbon-command-label { font-size: 11px; color: inherit; letter-spacing: .2px; }
+.ribbon-glyph { font-size: 14px; font-weight: 600; line-height: 16px; }
+.ribbon-glyph.glyph-italic { font-style: italic; }
+.ribbon-glyph.glyph-underline { text-decoration: underline; }
+.ribbon-glyph.glyph-strikethrough { text-decoration: line-through; font-weight: 500; }
+.ribbon-color { position: relative; cursor: pointer; }
+.ribbon-color input[type=color] { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.ribbon-color.is-disabled { opacity: .38; cursor: default; }
+.ribbon-color.is-disabled input[type=color] { cursor: default; }
+.ribbon-color-bar { position: absolute; left: 50%; bottom: -2px; width: 14px; height: 3px; border-radius: 1px; background: transparent; box-shadow: 0 0 0 1px var(--bt-border-soft); transform: translateX(-50%); }
+.ribbon-search-results { display: flex; align-items: center; gap: 1px; }
+.ribbon-search-results > span { display: inline-flex; }
+.ribbon-empty { padding: 0 10px; color: var(--bt-muted); font-size: 11px; }
+.ribbon-collapsed .ribbon-groups { display: none; }
+
+/* ---------- 编辑栏 ---------- */
+.ribbon-formula-bar {
+  display: flex; align-items: center; height: 30px; padding: 0 6px;
+  border-top: 1px solid var(--bt-border-soft);
+  background: var(--vscode-editor-background, transparent);
+}
+.ribbon-name-box {
+  flex: 0 0 auto; width: 66px; padding-right: 6px; border-right: 1px solid var(--bt-border-soft);
+  color: var(--bt-muted); font-size: 11px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ribbon-fx { flex: 0 0 auto; width: 26px; text-align: center; font-family: serif; font-style: italic; font-size: 12px; color: var(--bt-muted); }
+.ribbon-formula-bar input {
+  flex: 1; min-width: 40px; height: 22px; padding: 0 6px;
+  border: 1px solid var(--bt-border-soft); border-radius: 3px; background: var(--vscode-input-background, transparent);
+  color: inherit; font: inherit; font-size: 12px; outline: none;
+}
+.ribbon-formula-bar input:focus { border-color: var(--bt-accent); }
+.tablet-formula-actions { display: none; gap: 3px; }
+.tablet-formula-actions button {
+  height: 22px; padding: 0 8px; border: 1px solid var(--bt-border); border-radius: 3px;
+  background: transparent; color: inherit; font-size: 12px; cursor: pointer;
+}
+
+/* 旧工具栏只保留筛选/排序弹层的宿主 */
+.ribbon-popover-host { position: relative; z-index: 35; height: 0; padding: 0; border: 0; }
 .ribbon-popover-host > :not(.tool-wrap), .ribbon-popover-host > .tool-wrap > button { display: none; }
 .ribbon-popover-host > .tool-wrap { position: absolute; top: 0; left: 12px; }
 .ribbon-popover-host .popover { top: 0; }
-@media (max-width: 650px) { .ribbon-tabs strong { width: 100%; } .ribbon-tabs button { padding: 5px 8px; } .ribbon-tabs input[type=search] { width: 110px; } .ribbon-status { display: none; } }
+
+@media (max-width: 720px) {
+  .ribbon-tabs button { padding: 0 8px; }
+  .ribbon-search input { width: 110px; }
+  .ribbon-view select { max-width: 84px; }
+}

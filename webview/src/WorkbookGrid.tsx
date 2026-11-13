@@ -11,6 +11,7 @@ import type { UIConfig } from './config';
 import { FloatingPanel } from './FloatingPanel';
 import { belowAnchor, pointerAnchor, type FloatingAnchor } from './floating';
 import { GridTouchGesture } from './grid-touch';
+import { wheelScroll } from './grid-wheel';
 import { gridWidth, rowHeaderWidth, ROW_HEADER_KEY } from './grid-layout';
 interface Props {
     command?: { id: number; kind: string; value?: string | number };
@@ -32,6 +33,8 @@ interface Props {
     onDetail: (id: string) => void;
     onSelection?: (ids: string[], cols: string[]) => void;
     onMoveToSheet?: (ids: string[]) => void;
+    sequence?: boolean;
+    onSequenceChange?: (value: boolean) => void;
 }
 interface Point {
     row: number;
@@ -114,6 +117,9 @@ function htmlStyles(html: string): CellStyle[][] | undefined {
 export function WorkbookGrid(props: Props) {
     const { sheet, config, transact } = props;
     const viewId = props.viewId ?? sheet.views[0]?.name ?? '全部';
+    const [fallbackSequence, setFallbackSequence] = useState(false);
+    const sequence = props.sequence ?? fallbackSequence;
+    const setSequence = (value: boolean) => { if (props.onSequenceChange) props.onSequenceChange(value); else setFallbackSequence(value); };
     const { meta, cols, fieldIndices, parentIds, renderedFrozenCount, columnGroups, collapsedRows, collapsedGroups, extras, heights, pinnedRows, rows, pinnedIds, sourceRows, visibleRowMap, rowIndices } = useMemo(() => {
         const groupedRows = groupRows(props.rows, props.groupField);
         const meta = readGridMeta(sheet);
@@ -164,6 +170,7 @@ export function WorkbookGrid(props: Props) {
     for (const row of pinnedRows) { frozenTops.set(row.id, frozenOffset); frozenOffset += measuredHeights[row.id] ?? heights[row.id] ?? defaultHeight; }
     const frozenRowStyle = (id: string): CSSProperties => frozenTops.has(id) ? { position: 'sticky', top: frozenTops.get(id), zIndex: 4, background: 'var(--background-primary,var(--vscode-editor-background))' } : {};
     const root = useRef<HTMLDivElement>(null);
+    const scroller = useRef<HTMLDivElement>(null);
     const selecting = useRef(false);
     const [touchRange, setTouchRange] = useState(false);
     const [touchUsed, setTouchUsed] = useState(false);
@@ -194,6 +201,22 @@ export function WorkbookGrid(props: Props) {
             window.removeEventListener('pointercancel', cancelTouch, true);
             window.removeEventListener('scroll', cancelTouch, true);
         };
+    }, []);
+    useEffect(() => {
+        const element = scroller.current;
+        if (!element) return;
+        // React 的 onWheel 默认 passive,必须用原生监听才能阻止外层滚动并实现 Shift 横向滚动
+        const onWheel = (event: WheelEvent) => {
+            // 单元格编辑框、下拉和菜单自己处理滚轮
+            if ((event.target as HTMLElement).closest?.('textarea,input,select,[contenteditable=true],[role=menu],[role=dialog]')) return;
+            const delta = wheelScroll(event, { clientWidth: element.clientWidth, clientHeight: element.clientHeight, scrollWidth: element.scrollWidth, scrollHeight: element.scrollHeight });
+            if (!delta) return;
+            event.preventDefault();
+            element.scrollLeft += delta.dx;
+            element.scrollTop += delta.dy;
+        };
+        element.addEventListener('wheel', onWheel, { passive: false });
+        return () => element.removeEventListener('wheel', onWheel);
     }, []);
     const dragFill = useRef<Selection | null>(null);
     const draggedRow = useRef<string | null>(null);
@@ -227,7 +250,6 @@ export function WorkbookGrid(props: Props) {
     const [completion, setCompletion] = useState(meta.summary?.completionField ?? '');
     const [number, setNumber] = useState(meta.summary?.numberField ?? '');
     const [operation, setOperation] = useState<'sum' | 'average' | 'min' | 'max'>(meta.summary?.operation ?? 'sum');
-    const [sequence, setSequence] = useState(false);
     const [parentMode, setParentMode] = useState<'following' | 'selected'>('selected');
     const selectedRows = selection ? rows.slice(Math.min(selection.start.row, selection.end.row), Math.max(selection.start.row, selection.end.row) + 1) : [];
     const selectedCols = selection ? cols.slice(Math.min(selection.start.col, selection.end.col), Math.max(selection.start.col, selection.end.col) + 1) : [];
@@ -575,26 +597,8 @@ export function WorkbookGrid(props: Props) {
         return; if (!selection)
         return; const data = copyData(); internalClipboard = { ...data, payload: makeCellClipboard(sheet, rawSelectedRows, selectedCols), rowCoordinates: selectedRows.map(row => recordIndices.get(row.id)!), columnCoordinates: selectedCols.map(field => fieldIndices.get(field)!) }; event.clipboardData.setData(CELL_CLIPBOARD_MIME, encodeCellClipboard(internalClipboard.payload)); event.preventDefault(); event.clipboardData.setData('text/plain', data.plain); event.clipboardData.setData('text/html', data.html); }} onPaste={event => { if ((event.target as HTMLElement).matches('input,textarea'))
         return; event.preventDefault(); openPaste(event.clipboardData.getData('text/plain'), event.clipboardData.getData('text/html'), event.clipboardData.getData(CELL_CLIPBOARD_MIME)); }}>
-    <div className="personal-grid-tools"><div className="personal-touch-controls" aria-label="触屏选区操作">
-      <button aria-pressed={touchRange} onClick={() => setTouchRange(value => !value)}>范围选择{touchRange ? '：开' : '：关'}</button>
-      <button disabled={!selection} onClick={() => {
-          if (!selection) return;
-          const point = selection.end;
-          const cell = root.current?.querySelector<HTMLElement>(`td[data-row-index="${point.row}"][data-col-index="${point.col}"]`);
-          const editor = cell?.querySelector<HTMLElement>('.spreadsheet-cell');
-          if (editor) editor.dispatchEvent(new Event('personal-edit-cell'));
-          else {
-              const target = cell?.querySelector<HTMLElement>('.cell-select,input[type=checkbox],button[title="编辑"],input,textarea');
-              if (target?.matches('input:not([type=checkbox]),textarea')) target.focus();
-              else target?.click();
-          }
-      }}>编辑选中</button>
-      <button disabled={!selection} onClick={event => { if (ids[0]) { const rect = event.currentTarget.getBoundingClientRect(); openMenu(ids[0], event.currentTarget, rect.left, rect.bottom); } }}>选区操作</button>
-      <button disabled={!selection} onClick={event => show('fill', event.currentTarget)}>填充区域</button>
-      <span>点按选中 · 长按操作 · 开启范围后点按终点</span>
-    </div><span>{ids.length} 行 × {selectedCols.length} 列</span><button onClick={event => show('paste', event.currentTarget)}>粘贴预览</button><button onClick={event => show('summary', event.currentTarget)}>父节点汇总</button><label><input type="checkbox" checked={sequence} onChange={e => setSequence(e.target.checked)}/>序列填充</label>{columnGroups.map(group => <span className="personal-column-group" key={group.id}><button title={group.fields.join('、')} onClick={() => run('折叠列组', d => {const target = gridMeta(d).columnGroupsByView?.[viewId]?.find(item => item.id === group.id);if (target) target.collapsed = !target.collapsed;})}>{group.collapsed ? '▸' : '▾'} {group.name}</button><button title="移除列组" onClick={() => run('移除列组', d => {const m=gridMeta(d); if(m.columnGroupsByView) m.columnGroupsByView[viewId] = (m.columnGroupsByView[viewId] ?? []).filter(item => item.id !== group.id);})}>×</button></span>)}<span className="personal-grid-hint">拖选单元格 · Shift 扩选 · 右键操作 · 右下角拖动填充</span></div>
     {error && <div role="alert" className="personal-grid-error">{error}<button onClick={() => setError('')}>关闭</button></div>}
-    <div className="personal-grid-scroll" onMouseDownCapture={event => {
+    <div className="personal-grid-scroll" ref={scroller} onMouseDownCapture={event => {
         if (Date.now() - lastTouch.current < 800 && (event.target as HTMLElement).closest('td[data-row-index]') && !(event.target as HTMLElement).closest('.is-editing,.select-pop')) { event.preventDefault(); event.stopPropagation(); }
     }} onClickCapture={event => {
         if (event.isTrusted && Date.now() - lastTouch.current < 800 && (event.target as HTMLElement).closest('td[data-row-index]') && !(event.target as HTMLElement).closest('.is-editing,.select-pop')) { event.preventDefault(); event.stopPropagation(); }
@@ -656,6 +660,29 @@ export function WorkbookGrid(props: Props) {
                     })}<td style={frozenRowStyle(row.id)}/></tr>}
         </FragmentRow>;
         })}</tbody></table>{!sourceRows.length && <div className="personal-grid-empty">暂无记录<button onClick={() => run('新增行', d => { insertRows(d, undefined, 'below'); })}>新增行</button></div>}</div>
+    <div className="personal-grid-status">
+      <div className="personal-touch-controls" aria-label="触屏选区操作">
+        <button aria-pressed={touchRange} onClick={() => setTouchRange(value => !value)}>范围选择{touchRange ? '：开' : '：关'}</button>
+        <button disabled={!selection} onClick={() => {
+            if (!selection) return;
+            const point = selection.end;
+            const cell = root.current?.querySelector<HTMLElement>(`td[data-row-index="${point.row}"][data-col-index="${point.col}"]`);
+            const editor = cell?.querySelector<HTMLElement>('.spreadsheet-cell');
+            if (editor) editor.dispatchEvent(new Event('personal-edit-cell'));
+            else {
+                const target = cell?.querySelector<HTMLElement>('.cell-select,input[type=checkbox],button[title="编辑"],input,textarea');
+                if (target?.matches('input:not([type=checkbox]),textarea')) target.focus();
+                else target?.click();
+            }
+        }}>编辑选中</button>
+        <button disabled={!selection} onClick={event => { if (ids[0]) { const rect = event.currentTarget.getBoundingClientRect(); openMenu(ids[0], event.currentTarget, rect.left, rect.bottom); } }}>选区操作</button>
+        <button disabled={!selection} onClick={event => show('fill', event.currentTarget)}>填充区域</button>
+      </div>
+      <div className="personal-status-groups">{columnGroups.map(group => <span className="personal-column-group" key={group.id}><button title={group.fields.join('、')} onClick={() => run('折叠列组', d => { const target = gridMeta(d).columnGroupsByView?.[viewId]?.find(item => item.id === group.id); if (target) target.collapsed = !target.collapsed; })}>{group.collapsed ? '▸' : '▾'} {group.name}</button><button title="移除列组" onClick={() => run('移除列组', d => { const m = gridMeta(d); if (m.columnGroupsByView) m.columnGroupsByView[viewId] = (m.columnGroupsByView[viewId] ?? []).filter(item => item.id !== group.id); })}>×</button></span>)}</div>
+      <span className="personal-status-hint">Shift + 滚轮 横向滚动</span>
+      <span className="personal-status-count">{ids.length && selectedCols.length ? `${ids.length} 行 × ${selectedCols.length} 列` : `${rows.length} 条记录`}</span>
+      <label className="personal-status-toggle" title="拖动填充时按序列递增数值或日期"><input type="checkbox" checked={sequence} onChange={e => setSequence(e.target.checked)} />序列填充</label>
+    </div>
     {menu && <FloatingPanel anchor={menu.anchor} role="menu" className="personal-context" onDismiss={() => setMenu(null)}>
       <div className="personal-format-toolbar" aria-label="单元格格式">
         <button aria-label="增粗" aria-pressed={formatEnabled('bold')} title="增粗 Ctrl/Cmd+B" onClick={() => toggleFormat('bold')}><b>B</b></button>

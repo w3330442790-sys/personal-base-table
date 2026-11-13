@@ -1,7 +1,7 @@
 {
   "id": "personal-base-table",
   "name": "我的多维表格",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "minAppVersion": "1.5.0",
   "description": "个人多维工作簿，支持多工作表、完整撤销、父子行、区域编辑、合并单元格与历史快照。基于 Weilanx Base Table。",
   "author": "w3330442790-sys · based on Azure12355",

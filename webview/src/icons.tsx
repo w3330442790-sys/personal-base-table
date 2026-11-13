@@ -55,6 +55,27 @@ const ICONS: Record<string, PathSpec[]> = {
   insertLeft: [{ d: "M9.5 3.5h3v9h-3zM5.5 8h-3M5.5 8 7.5 6M5.5 8 7.5 10", strokeWidth: 1.3 }],
   insertRight: [{ d: "M3.5 3.5h3v9h-3zM10.5 8h3M10.5 8 8.5 6M10.5 8 8.5 10", strokeWidth: 1.3 }],
   hide: [{ d: "M6.3 4.1A6.3 6.3 0 0 1 8 3.8C11.8 3.8 14.2 8 14.2 8a11 11 0 0 1-2 2.4M3.6 5.6A11 11 0 0 0 1.8 8S4.2 12.2 8 12.2a6.2 6.2 0 0 0 2-.33M2.5 2.5l11 11", strokeWidth: 1.3 }],
+
+  // 紧凑功能区(Excel 风格)
+  paste: [{ d: "M5.5 3.5h5M5.5 3.5a1 1 0 0 0-1 1v8.3a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V4.5a1 1 0 0 0-1-1", strokeWidth: 1.3 }, { d: "M6.5 2.5h3a.6.6 0 0 1 .6.6v1.4a.6.6 0 0 1-.6.6h-3a.6.6 0 0 1-.6-.6V3.1a.6.6 0 0 1 .6-.6Z", strokeWidth: 1.3 }, { d: "M5.5 7.5h5M5.5 10.5h3.5", strokeWidth: 1.2 }],
+  wrap: [{ d: "M2.5 4.5h11M2.5 8h7.5a2 2 0 0 1 0 4H7M7 10.5 8.5 12 7 13.5M2.5 12h2.5", strokeWidth: 1.3 }],
+  merge: [{ d: "M2.5 3.5h3v9h-3zM10.5 3.5h3v9h-3z", strokeWidth: 1.3 }, { d: "M7 8h2M5.5 6 7 8 5.5 10M10.5 6 9 8 10.5 10", strokeWidth: 1.3 }],
+  eraser: [{ d: "M9.2 2.8 13.2 6.8 8.4 11.6H4.9L2.8 9.5 9.2 2.8Z", strokeWidth: 1.3 }, { d: "M6 8 10.5 12.5M4 13.5h9", strokeWidth: 1.2 }],
+  clear: [{ d: "M3.5 4.5h9M6 4.5V3.2h4v1.3M5 4.5l.5 8.2h5l.5-8.2M6.8 7v3.5M9.2 7v3.5", strokeWidth: 1.3 }],
+  search: [{ d: "M7.2 2.8a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8ZM10.6 10.6l2.6 2.6", strokeWidth: 1.4 }],
+  history: [{ d: "M8 4.2V8l2.4 1.6M2.2 8a5.8 5.8 0 1 1 1.7 4.1M2.2 8H.8M2.2 8l1.4 1.4", strokeWidth: 1.3 }],
+  template: [{ d: "M2.5 2.5h11v11h-11z", strokeWidth: 1.3 }, { d: "M2.5 6h11M6 6v7.5", strokeWidth: 1.2 }],
+  table: [{ d: "M2.5 3.5h11v9h-11z", strokeWidth: 1.3 }, { d: "M2.5 7h11M7 3.5v9", strokeWidth: 1.2 }],
+  columns: [{ d: "M2.5 3.5h3.5v9H2.5zM10 3.5h3.5v9H10zM6 8h4", strokeWidth: 1.2 }],
+  tree: [{ d: "M3 3.5v7a1 1 0 0 0 1 1h2M3 7h3M3 3.5h2", strokeWidth: 1.3 }, { d: "M6 5.2h4M6 10.5h4M10 4.2v2M10 9.5v2", strokeWidth: 1.2 }],
+  palette: [{ d: "M8 2.5a5.5 5.5 0 1 0 0 11c1.3 0 1.5-1 1-1.8-.6-.9 0-2 1-2h1.2A2.3 2.3 0 0 0 13.5 7 5.5 5.5 0 0 0 8 2.5Z", strokeWidth: 1.3 }, { d: "M5.4 6h.01M7.8 4.8h.01M10.4 5.6h.01", strokeWidth: 1.8 }],
+  fill: [{ d: "M7 2.8 12 7.8 7.6 12.2 2.6 7.2 7 2.8Z", strokeWidth: 1.3 }, { d: "M5 12.5c0 1-1.4 1-1.4 0 0-.7 1.4-2 1.4-2s1.4 1.3 1.4 2c0 1-1.4 1-1.4 0Z", strokeWidth: 1.2 }, { d: "M12 9.5c0 .7.9 1.4.9 2.2a.9.9 0 0 1-1.8 0c0-.8.9-1.5.9-2.2Z", strokeWidth: 1.2 }],
+  width: [{ d: "M2.5 8h11M2.5 8 5 5.5M2.5 8 5 10.5M13.5 8 11 5.5M13.5 8 11 10.5", strokeWidth: 1.3 }, { d: "M6.5 3.5v9M9.5 3.5v9", strokeWidth: 1.1 }],
+  sequence: [{ d: "M3 4.5h4M3 8h4M3 11.5h4", strokeWidth: 1.3 }, { d: "M9.5 3.5v9M9.5 3.5 11.5 5.5M9.5 3.5 7.5 5.5M9.5 12.5l2-2M9.5 12.5l-2-2", strokeWidth: 1.2 }],
+  more: [{ d: "M3 8h.01M8 8h.01M13 8h.01", strokeWidth: 2.2 }],
+  collapse: [{ d: "M3.5 6.5 8 2.5l4.5 4M3.5 10.5 8 6.5l4.5 4", strokeWidth: 1.3 }],
+  expand: [{ d: "M3.5 9.5 8 13.5l4.5-4M3.5 5.5 8 9.5l4.5-4", strokeWidth: 1.3 }],
+  settings: [{ d: "M8 5.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8Z", strokeWidth: 1.3 }, { d: "M8 1.8v1.4M8 12.8v1.4M2.4 8h1.4M12.2 8h1.4M3.9 3.9l1 1M11.1 11.1l1 1M12.1 3.9l-1 1M4.9 11.1l-1 1", strokeWidth: 1.2 }],
 };
 
 interface Props {

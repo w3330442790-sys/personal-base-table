@@ -49,6 +49,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   const [snapshots, setSnapshots] = useState<SnapshotMetadata[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sequence, setSequence] = useState(false);
   const [rename, setRename] = useState<{ id: string; name: string } | null>(null);
   const [sheetMenu, setSheetMenu] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -309,13 +310,13 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
     }}>导出待保存副本</button><button onClick={() => { failedDraft.current = null; setHasDraft(false); publish(); }}>放弃待保存修改</button></div>}
     <div className={`workbook-content${busy || hasDraft ? " workbook-busy" : ""}`}>
       <App key={active} worksheetMode host={sheetHost.current!} managedHistory={{ canUndo: session.current!.canUndo, canRedo: session.current!.canRedo, undo: () => navigateHistory("undo"), redo: () => navigateHistory("redo") }}
-        renderToolbar={controls => <WorkbookRibbon controls={controls} sheet={sheet} selectedRows={selectedRows} selectedCols={selectedCols} onCommand={issueCommand} onPanel={openPanel} onCreateSheet={() => createWorksheet()} busy={busy}
+        renderToolbar={controls => <WorkbookRibbon controls={controls} sheet={sheet} selectedRows={selectedRows} selectedCols={selectedCols} sequence={sequence} onSequence={setSequence} onCommand={issueCommand} onPanel={openPanel} onCreateSheet={() => createWorksheet()}
             onFormulaCommit={(id, field, value) => transact("编辑单元格内容与公式", candidate => {
               const merge = readGridMeta(candidate).merges?.find(region => region.rowIds.includes(id) && region.fields.includes(field));
               if (merge) merge.display = value;
               else updateCell(candidate, id, field, typedValue(value, candidate.fields[field]));
             })} />}
-          renderTable={props => <ProjectedWorkbookGrid {...props} command={gridCommand} viewId={props.view.name} sheet={sheet} transact={transact}
+          renderTable={props => <ProjectedWorkbookGrid {...props} command={gridCommand} viewId={props.view.name} sheet={sheet} transact={transact} sequence={sequence} onSequenceChange={setSequence}
           onDetail={id => { setDetailId(id); setPanel("details"); }}
           onSelection={(ids, cols) => { setSelectedRows(ids); setSelectedCols(cols); }}
           onMoveToSheet={ids => { setSelectedRows(ids); setPanel("move"); }} />}
@@ -332,6 +333,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
         {sheetMenu === info.id && <div className="sheet-menu"><button onClick={() => { setRename({ id: info.id, name: info.name }); setSheetMenu(null); }}>重命名</button><button onClick={() => { createWorksheet(info.id); setSheetMenu(null); }}>复制工作表</button><button disabled={sheets.length <= 1} onClick={() => { setDeleteTarget(info.id); setSheetMenu(null); }}>删除工作表</button></div>}
       </div>)}
       <button aria-label="新建工作表" title="新建独立工作表" onClick={() => createWorksheet()}>＋</button>
+      <span className="workbook-save-state" role="status" aria-live="polite">{busy ? "正在保存…" : hasDraft ? "有未保存修改" : ""}</span>
     </div>
     {rename && <div className="workbook-dialog-backdrop"><form className="workbook-dialog" onSubmit={event => { event.preventDefault(); transactDocument("重命名工作表", doc => renameSheet(doc, rename.id, rename.name)); setRename(null); }}><h3>重命名工作表</h3><input aria-label="工作表名称" autoFocus value={rename.name} onChange={event => setRename({ ...rename, name: event.target.value })} /><button type="submit">保存</button><button type="button" onClick={() => setRename(null)}>取消</button></form></div>}
     {deleteTarget && <div className="workbook-dialog-backdrop"><div className="workbook-dialog"><h3>删除工作表</h3><p>将删除 {sheets.find(s => s.id === deleteTarget)?.name} 的 {getSheet(document, deleteTarget).records.length} 行记录。操作前会创建快照，之后可以撤销。</p><button onClick={() => { transactDocument("删除工作表", doc => removeSheet(doc, deleteTarget), true); setDeleteTarget(null); }}>删除并保留快照</button><button onClick={() => setDeleteTarget(null)}>取消</button></div></div>}
