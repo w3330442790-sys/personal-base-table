@@ -18,8 +18,8 @@ ASSET="weilanx-base-table.vsix"
 URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
 EXT_ID="weilanx.weilanx-base-table"
 
-RELEASE="https://github.com/${REPO}/releases/latest/download"
-OBSIDIAN_ID="weilanx-base-table"
+RELEASE="https://github.com/w3330442790-sys/personal-base-table/releases/latest/download"
+OBSIDIAN_ID="personal-base-table"
 
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
