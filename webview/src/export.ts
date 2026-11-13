@@ -1,5 +1,6 @@
 import type { BaseTable, FieldDef, Row } from "../../src/core/types";
 import type { MergeRegion } from "../../src/core/features";
+import { cellStyleHtml, type StyleMap } from "../../src/core/cell-style";
 
 /** 单元格导出文本:多选用「, 」连接,复选用是/空,其余转字符串 */
 export function cellText(value: unknown): string {
@@ -26,7 +27,7 @@ function htmlEscape(s: string): string {
 }
 
 /** 导出为 Excel(HTML 表格形态的 .xls,Excel/WPS 可直接打开) */
-export function toXLS(cols: string[], rows: Row[], merges: MergeRegion[] = []): string {
+export function toXLS(cols: string[], rows: Row[], merges: MergeRegion[] = [], styles: StyleMap = {}): string {
   const head = "<tr>" + cols.map((c) => `<th>${htmlEscape(c)}</th>`).join("") + "</tr>";
   const visibleMerges = merges.filter(merge => {
     const rowIndexes = merge.rowIds.map(id => rows.findIndex(row => row.id === id));
@@ -36,9 +37,11 @@ export function toXLS(cols: string[], rows: Row[], merges: MergeRegion[] = []): 
   const body = rows
     .map((r) => "<tr>" + cols.map((c) => {
       const merge = visibleMerges.find(region => region.rowIds.includes(r.id) && region.fields.includes(c));
-      if (!merge) return `<td>${htmlEscape(cellText(r.values[c]))}</td>`;
+      const css = cellStyleHtml(styles[r.id]?.[c] ?? {});
+      const style = css ? ` style="${css}"` : "";
+      if (!merge) return `<td${style}>${htmlEscape(cellText(r.values[c]))}</td>`;
       if (merge.rowIds[0] !== r.id || merge.fields[0] !== c) return "";
-      return `<td rowspan="${merge.rowIds.length}" colspan="${merge.fields.length}">${htmlEscape(cellText(merge.display))}</td>`;
+      return `<td rowspan="${merge.rowIds.length}" colspan="${merge.fields.length}"${style}>${htmlEscape(cellText(merge.display))}</td>`;
     }).join("") + "</tr>")
     .join("");
   return `<html><head><meta charset="utf-8"></head><body><table border="1">${head}${body}</table></body></html>`;

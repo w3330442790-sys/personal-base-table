@@ -372,8 +372,8 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
   const handleExport = (format: ExportFormat) => {
     if (!table) return;
     const baseName = (table.path.split(/[\\/]/).pop() || "table").replace(/\.w?base$/, "");
-    const merges = table.document ? readGridMeta(getSheet(table.document, table.sheetId ?? "main")).merges : undefined;
-    const content = format === "csv" ? toCSV(cols, rows) : format === "xls" ? toXLS(cols, rows, merges) : toJSONDoc(table);
+    const formatting = table.document ? readGridMeta(getSheet(table.document, table.sheetId ?? "main")) : undefined;
+    const content = format === "csv" ? toCSV(cols, rows) : format === "xls" ? toXLS(cols, rows, formatting?.merges, formatting?.cellStyles) : toJSONDoc(table);
     post({ type: "export", defaultName: `${baseName}.${format}`, content });
     setExportOpen(false);
   };

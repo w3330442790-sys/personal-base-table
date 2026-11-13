@@ -1,5 +1,7 @@
 import { genId, type BaseDoc, type FieldDef, type Row, type ViewDef } from './types';
 import { applyView } from '../../webview/src/filter';
+import type { StyleMap } from './cell-style';
+import { cellStyle, cellStyleHtml } from './cell-style';
 export interface MergeRegion {
     id: string;
     rowIds: string[];
@@ -17,6 +19,7 @@ export interface FormatRule {
     background?: string;
 }
 export interface GridMetadata {
+    cellStyles?: StyleMap;
     parents?: Record<string, string>;
     collapsed?: string[];
     collapsedByView?: Record<string, string[]>;
@@ -140,6 +143,8 @@ export function insertRows(sheet: BaseDoc, anchor: string | undefined, side: 'ab
     const added = Array.from({ length: count }, () => ({ ...(duplicate && source ? structuredClone(source) : {}), id: genId() }));
     sheet.records.splice(index < 0 ? sheet.records.length : index + (side === 'below' ? 1 : 0), 0, ...added);
     const parent = anchor && readGridMeta(sheet).parents?.[anchor];
+    const sourceStyle = anchor && readGridMeta(sheet).cellStyles?.[anchor];
+    if (duplicate && sourceStyle) for (const row of added) (gridMeta(sheet).cellStyles ??= {})[row.id] = structuredClone(sourceStyle);
     if (parent)
         assignParent(sheet, parent, added.map(r => r.id));
     return added.map(r => r.id);
@@ -165,6 +170,7 @@ export function deleteRows(sheet: BaseDoc, ids: string[], subtree: boolean): voi
     }
     meta.parents = parents;
     meta.collapsed = meta.collapsed?.filter(id => !remove.has(id));
+    for (const id of remove) if (meta.cellStyles) delete meta.cellStyles[id];
     for (const [view, collapsed] of Object.entries(meta.collapsedByView ?? {})) meta.collapsedByView![view] = collapsed.filter(id => !remove.has(id));
     sheet.records = sheet.records.filter(r => !remove.has(String(r.id)));
 }
@@ -259,8 +265,9 @@ export function selectionClipboard(sheet: BaseDoc, rows: Row[], fields: string[]
             const origin = merge && merge.rowIds[0] === row.id && merge.fields[0] === field;
             const value = merge ? (origin ? stringify(merge.display) : '') : stringify(row.values[field]);
             values.push(/[\t\n\r"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
-            if (!merge) cells.push(`<td>${escape(value)}</td>`);
-            else if (origin) cells.push(`<td rowspan="${merge.rowIds.length}" colspan="${merge.fields.length}">${escape(value)}</td>`);
+            const style = cellStyleHtml(cellStyle(sheet, row.id, field));
+            if (!merge) cells.push(`<td${style ? ` style="${style}"` : ''}>${escape(value)}</td>`);
+            else if (origin) cells.push(`<td rowspan="${merge.rowIds.length}" colspan="${merge.fields.length}"${style ? ` style="${style}"` : ''}>${escape(value)}</td>`);
         }
         matrix.push(values);
         htmlRows.push(`<tr>${cells.join('')}</tr>`);

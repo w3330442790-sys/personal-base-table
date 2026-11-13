@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { FieldDef } from "../../src/core/types";
 import { tagStyle } from "./config";
 import { formatDate, formatNumber } from "./format";
 import { useAutoClose } from "./hooks";
 import { useHost } from "./host";
 import { parseWikiLink } from "../../src/core/links";
+import { typedValue } from "../../src/core/features";
 
 const CHECK = "✓";
 
@@ -51,13 +53,18 @@ export function CellPreview({ def, value, colorful }: { def: FieldDef; value: un
 }
 
 interface Props {
+  spreadsheet?: boolean;
+  onNavigate?: (direction: "up" | "down" | "left" | "right") => void;
   def: FieldDef;
   value: unknown;
   colorful: boolean;
   onCommit: (value: unknown) => void;
 }
 
-export function Cell({ def, value, colorful, onCommit }: Props) {
+export function Cell({ def, value, colorful, onCommit, spreadsheet = false, onNavigate }: Props) {
+  if (spreadsheet && def.type !== "checkbox" && def.type !== "select" && def.type !== "multi") {
+    return <SpreadsheetCell def={def} value={value} colorful={colorful} onCommit={onCommit} onNavigate={onNavigate} />;
+  }
   switch (def.type) {
     case "checkbox":
       return (
@@ -86,6 +93,68 @@ export function Cell({ def, value, colorful, onCommit }: Props) {
         </div>
       );
   }
+}
+
+/** Select with one click, edit in the cell with typing, F2 or a double click. */
+function SpreadsheetCell({ def, value, colorful, onCommit, onNavigate }: Props) {
+  const host = useHost();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState("");
+  const display = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const finishing = useRef(false);
+  const latest = useRef("");
+  const initial = value == null ? "" : String(value);
+
+  const begin = (seed = initial) => {
+    finishing.current = false;
+    latest.current = seed;
+    flushSync(() => { setDraft(seed); setError(""); setEditing(true); });
+    input.current?.focus();
+    input.current?.setSelectionRange(seed.length, seed.length);
+  };
+  const finish = (save: boolean, direction?: "up" | "down" | "left" | "right", refocus = true) => {
+    if (finishing.current) return;
+    if (save && latest.current !== initial) {
+      try { onCommit(typedValue(latest.current, def)); }
+      catch (reason) { setError((reason as Error).message); return; }
+    }
+    finishing.current = true;
+    setEditing(false);
+    setError("");
+    if (direction) onNavigate?.(direction);
+    else if (refocus) requestAnimationFrame(() => display.current?.focus());
+  };
+  const editKeys = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finish(false); }
+    if (event.key === "Tab") { event.preventDefault(); event.stopPropagation(); finish(true, event.shiftKey ? "left" : "right"); }
+    if (event.key === "Enter" && !event.altKey) { event.preventDefault(); event.stopPropagation(); finish(true, event.shiftKey ? "up" : "down"); }
+  };
+
+  return <div className={`cellbox spreadsheet-cell${editing ? " is-editing" : ""}`} tabIndex={0} ref={display}
+    onDoubleClick={() => { if (!editing) begin(); }}
+    onClick={event => {
+      const wiki = parseWikiLink(value);
+      if (!editing && wiki && (event.ctrlKey || event.metaKey)) host.post({ type: "openLink", target: wiki.target });
+    }}
+    onKeyDown={event => {
+      if (editing || event.target !== event.currentTarget) return;
+      if (event.key === "F2") { event.preventDefault(); event.stopPropagation(); begin(); return; }
+      if (event.keyCode === 229 || event.key === "Process") { begin(""); return; }
+      if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault(); event.stopPropagation(); begin(event.key);
+      }
+    }}>
+    {editing ? <>
+      {def.type === "longtext" ? <textarea className="spreadsheet-input" ref={element => { input.current = element; }} value={draft} rows={1} aria-label="编辑单元格" aria-invalid={!!error} title={error || "Enter 确认，Alt+Enter 换行，Esc 取消"}
+        onChange={event => { latest.current = event.target.value; setDraft(event.target.value); }} onKeyDown={editKeys} onBlur={() => finish(true, undefined, false)} />
+        : <input className="spreadsheet-input" ref={element => { input.current = element; }} value={draft} type="text" aria-label="编辑单元格" aria-invalid={!!error} title={error || "Enter 确认，Esc 取消"}
+          onChange={event => { latest.current = event.target.value; setDraft(event.target.value); }} onKeyDown={editKeys} onBlur={() => finish(true, undefined, false)} />}
+      {error && <span role="alert" className="spreadsheet-error">{error}</span>}
+    </> : <CellPreview def={def} value={value} colorful={colorful} />}
+  </div>;
 }
 
 function TextEdit({

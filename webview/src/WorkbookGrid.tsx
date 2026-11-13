@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { BaseDoc, Row } from '../../src/core/types';
 import { applyPaste, assignParent, conditionalStyle, deleteRows, descendants, fillCells, gridMeta, insertRows, leafSummary, mergeCells, moveSubtree, parseTSV, planPaste, readGridMeta, unmergeCells, selectionClipboard, groupRows, createColumnGroup, visibleGroupColumns, type PastePlan } from '../../src/core/features';
 import { Cell } from './Cell';
+import { cellStyle, cellStyleCss, formatCells, toggleCellStyle, type CellStyle } from '../../src/core/cell-style';
+import { applySheetMessage } from '../../src/core/messages';
 import type { UIConfig } from './config';
 import { FloatingPanel } from './FloatingPanel';
 import { belowAnchor, pointerAnchor, type FloatingAnchor } from './floating';
@@ -86,6 +88,7 @@ export function WorkbookGrid(props: Props) {
     const resizeCleanup = useRef<() => void>(() => {});
     const headerWidth = rowHeaderWidth(props.colWidths);
     const [count, setCount] = useState(1);
+    const [deleteMode, setDeleteMode] = useState<'rows' | 'columns'>('rows');
     const [side, setSide] = useState<'above' | 'below'>('below');
     const [join, setJoin] = useState(false);
     const [keepDisplay, setKeepDisplay] = useState(false);
@@ -152,6 +155,18 @@ export function WorkbookGrid(props: Props) {
         owner.addEventListener('mouseup', up);
     };
     const choose = (point: Point, extend = false) => { setSelection(old => ({ start: extend && old ? old.start : point, end: point })); };
+    const focusPoint = (point: Point) => requestAnimationFrame(() => {
+        const target = root.current?.querySelector<HTMLElement>(`td[data-row-index="${point.row}"][data-col-index="${point.col}"] .spreadsheet-cell`);
+        (target ?? root.current)?.focus();
+    });
+    const navigate = (row: number, col: number, direction: 'up' | 'down' | 'left' | 'right') => {
+        const point = { row: Math.max(0, Math.min(rows.length - 1, row + (direction === 'down' ? 1 : direction === 'up' ? -1 : 0))), col: Math.max(0, Math.min(cols.length - 1, col + (direction === 'right' ? 1 : direction === 'left' ? -1 : 0))) };
+        choose(point);
+        focusPoint(point);
+    };
+    const formatEnabled = (key: 'bold' | 'italic' | 'underline' | 'strikethrough') => ids.length > 0 && selectedCols.length > 0 && ids.every(id => selectedCols.every(field => cellStyle(sheet, id, field)[key]));
+    const toggleFormat = (key: 'bold' | 'italic' | 'underline' | 'strikethrough') => run('修改单元格格式', candidate => toggleCellStyle(candidate, ids, selectedCols, key));
+    const alignSelection = (align: CellStyle['align']) => run('设置选区对齐', candidate => formatCells(candidate, ids, selectedCols, { align }));
     const isSelected = (row: number, col: number) => !!selection && row >= Math.min(selection.start.row, selection.end.row) && row <= Math.max(selection.start.row, selection.end.row) && col >= Math.min(selection.start.col, selection.end.col) && col <= Math.max(selection.start.col, selection.end.col);
     const copyData = () => selectionClipboard(sheet, selectedRows, selectedCols);
     const copy = async () => {
@@ -216,7 +231,17 @@ export function WorkbookGrid(props: Props) {
             if (directions[event.key]) {
                 event.preventDefault();
                 const [dr, dc] = directions[event.key];
-                choose({ row: Math.max(0, Math.min(rows.length - 1, selection.end.row + dr)), col: Math.max(0, Math.min(cols.length - 1, selection.end.col + dc)) }, event.shiftKey);
+                const point = { row: Math.max(0, Math.min(rows.length - 1, selection.end.row + dr)), col: Math.max(0, Math.min(cols.length - 1, selection.end.col + dc)) };
+                choose(point, event.shiftKey);
+                focusPoint(point);
+            }
+            if (event.key === 'Tab' || event.key === 'Enter') {
+                event.preventDefault();
+                navigate(selection.end.row, selection.end.col, event.key === 'Tab' ? (event.shiftKey ? 'left' : 'right') : (event.shiftKey ? 'up' : 'down'));
+            }
+            if ((event.ctrlKey || event.metaKey) && ['b', 'i', 'u'].includes(event.key.toLowerCase())) {
+                event.preventDefault();
+                toggleFormat(event.key.toLowerCase() === 'b' ? 'bold' : event.key.toLowerCase() === 'i' ? 'italic' : 'underline');
             }
             if (event.key === 'Delete' || event.key === 'Backspace') {
                 event.preventDefault();
@@ -261,13 +286,13 @@ export function WorkbookGrid(props: Props) {
                         if (intact && (merge.rowIds[0] !== row.id || merge.fields[0] !== field))
                             return null;
                         const value = intact ? merge.display : row.values[field];
-                        return <td key={field} rowSpan={intact ? merge.rowIds.length : undefined} colSpan={intact ? merge.fields.length : undefined} title={merge && !intact ? '部分合并区域，当前显示原值' : undefined} className={`${isSelected(ri, ci) ? 'personal-selected' : ''} ${merge ? 'personal-merged' : ''}`} style={{ ...frozenStyle(ci), textAlign: sheet.fields[field].align ?? (sheet.fields[field].type === 'number' ? 'right' : 'left'), ...conditionalStyle(sheet, row, field) }} onMouseDown={event => { if (event.button !== 0)
+                        return <td key={field} data-row-index={ri} data-col-index={ci} data-row-id={row.id} data-field={field} rowSpan={intact ? merge.rowIds.length : undefined} colSpan={intact ? merge.fields.length : undefined} title={merge && !intact ? '部分合并区域，当前显示原值' : undefined} className={`${isSelected(ri, ci) ? 'personal-selected' : ''} ${merge ? 'personal-merged' : ''}`} style={{ ...frozenStyle(ci), ...cellStyleCss(cellStyle(sheet, row.id, field)), textAlign: cellStyle(sheet, row.id, field).align ?? sheet.fields[field].align ?? (sheet.fields[field].type === 'number' ? 'right' : 'left'), ...conditionalStyle(sheet, row, field) }} onMouseDown={event => { if (event.button !== 0)
                             return; choose({ row: ri, col: ci }, event.shiftKey); selecting.current = true; setMenu(null); if (!(event.target as HTMLElement).closest('input,textarea,button,a'))
-                            root.current?.focus(); }} onMouseEnter={() => { if (selecting.current)
+                            (event.currentTarget.querySelector<HTMLElement>('.spreadsheet-cell') ?? root.current)?.focus(); }} onMouseEnter={() => { if (selecting.current)
                             setSelection(old => old ? { ...old, end: { row: ri, col: ci } } : old); }} onMouseUp={() => { if (dragFill.current)
                             applyDragFill(ri); selecting.current = false; }} onContextMenu={event => { event.preventDefault(); if (!isSelected(ri, ci))
                             choose({ row: ri, col: ci }); openMenu(row.id, event.currentTarget, event.clientX, event.clientY); }}>
-                <Cell def={intact ? { type: 'longtext' } : sheet.fields[field]} value={value} colorful={config.colorfulTags} onCommit={next => run('编辑单元格', d => { if (intact) {
+                <Cell spreadsheet onNavigate={direction => navigate(ri, ci, direction)} def={intact ? { type: 'longtext' } : sheet.fields[field]} value={value} colorful={config.colorfulTags} onCommit={next => run('编辑单元格', d => { if (intact) {
                             const m = gridMeta(d).merges?.find(m => m.id === merge.id);
                             if (m)
                                 m.display = next;
@@ -284,9 +309,17 @@ export function WorkbookGrid(props: Props) {
         </FragmentRow>;
         })}</tbody></table>{!sourceRows.length && <div className="personal-grid-empty">暂无记录<button onClick={() => run('新增行', d => { insertRows(d, undefined, 'below'); })}>新增行</button></div>}</div>
     {menu && <FloatingPanel anchor={menu.anchor} role="menu" className="personal-context" onDismiss={() => setMenu(null)}>
+      <div className="personal-format-toolbar" aria-label="单元格格式">
+        <button aria-label="增粗" aria-pressed={formatEnabled('bold')} title="增粗 Ctrl/Cmd+B" onClick={() => toggleFormat('bold')}><b>B</b></button>
+        <button aria-label="斜体" aria-pressed={formatEnabled('italic')} title="斜体 Ctrl/Cmd+I" onClick={() => toggleFormat('italic')}><i>I</i></button>
+        <button aria-label="下划线" aria-pressed={formatEnabled('underline')} title="下划线 Ctrl/Cmd+U" onClick={() => toggleFormat('underline')}><u>U</u></button>
+        <button aria-label="删除线" aria-pressed={formatEnabled('strikethrough')} title="删除线" onClick={() => toggleFormat('strikethrough')}><s>S</s></button>
+      </div>
+      <div className="personal-format-toolbar" aria-label="选区对齐"><button onClick={() => alignSelection('left')}>左对齐</button><button onClick={() => alignSelection('center')}>居中</button><button onClick={() => alignSelection('right')}>右对齐</button></div>
+      <button onClick={() => run('清除单元格格式', candidate => formatCells(candidate, ids, selectedCols, null))}>清除格式</button><button disabled={selectedCols.length < 2} onClick={() => show('columnGroup')}>创建选中列的列组</button><hr />
       <button onClick={() => { props.onDetail(active); setMenu(null); }}>打开行详情</button><button onClick={() => { setSide('above'); show('insert'); }}>上方插入行</button><button onClick={() => { setSide('below'); show('insert'); }}>下方插入行 / 多行</button><button onClick={() => run('复制行', d => { for (const id of ids)
             insertRows(d, id, 'below', 1, true); })}>复制选中行</button><button onClick={() => { setParentMode(ids.length > 1 ? 'selected' : 'following'); show('parent'); }}>设置为父节点</button><button onClick={() => run('取消父节点归属', d => assignParent(d, undefined, ids))}>提升选中行到顶级</button>
-      <hr /><button onClick={() => show('merge')}>合并区域 / 取消合并</button><button onClick={() => void copy()}>复制区域</button><button onClick={() => openPaste()}>粘贴预览</button><button onClick={() => show('fill')}>填充区域</button><button onClick={() => run('清空区域', d => fillCells(d, ids, selectedCols, null))}>清空区域</button>{props.onMoveToSheet && <button onClick={() => { props.onMoveToSheet?.(ids); setMenu(null); }}>移动到其他工作表</button>}<hr /><button onClick={() => show('delete')}>删除选中行</button>
+      <hr /><button onClick={() => show('merge')}>合并区域 / 取消合并</button><button onClick={() => void copy()}>复制区域</button><button onClick={() => openPaste()}>粘贴预览</button><button onClick={() => show('fill')}>填充区域</button><button onClick={() => run('清空区域', d => fillCells(d, ids, selectedCols, null))}>清空区域</button>{props.onMoveToSheet && <button onClick={() => { props.onMoveToSheet?.(ids); setMenu(null); }}>移动到其他工作表</button>}<hr /><button onClick={() => { setDeleteMode('rows'); show('delete'); }}>删除选中行</button><button onClick={() => { setDeleteMode('columns'); show('delete'); }}>删除选中列</button>
     </FloatingPanel>}
     {dialog && <FloatingPanel anchor={lastAnchor.current ?? belowAnchor(root.current!)} className="personal-dialog" onDismiss={() => setDialog(null)}><h3>{{ insert: '插入行', parent: '父子行设置', merge: '合并单元格', paste: '粘贴预览', fill: '填充区域', summary: '父节点汇总', delete: '删除行', columnGroup: '创建列组' }[dialog]}</h3>
       {dialog === 'columnGroup' && <><label>列组名称<input value={groupName} onChange={event => setGroupName(event.target.value)} /></label><p>选中 {selectedCols.join('、')}。折叠后保留组内首个可见列。</p><button onClick={() => run('创建列组', d => createColumnGroup(d, viewId, groupName, selectedCols))}>创建</button></>}{dialog === 'insert' && <><label>插入位置<select value={side} onChange={e => setSide(e.target.value as 'above' | 'below')}><option value="above">上方</option><option value="below">下方</option></select></label><label>行数<input type="number" min={1} max={10000} value={count} onChange={e => setCount(Number(e.target.value))}/></label><p>排序视图按排序规则展示插入后的行。同级父节点归属自动继承。</p><button onClick={() => run('插入行', d => { insertRows(d, active, side, count); })}>插入</button></>}
@@ -304,7 +337,11 @@ export function WorkbookGrid(props: Props) {
         } }}/><label><input type="checkbox" checked={expand} onChange={e => setExpand(e.target.checked)}/>超出列数时新增文本列</label>{pastePlan && <><p>{pastePlan.updates.length} 个单元格，新增 {pastePlan.newRows.length} 行、{pastePlan.newFields.length} 列</p><div className="personal-preview">{pastePlan.updates.slice(0, 30).map((u, i) => <div key={i}>{u.id} · {u.field} → {text(u.value)}</div>)}</div>{pastePlan.errors.map((err, i) => <div key={i} className="personal-grid-error">{err}</div>)}<button disabled={!!pastePlan.errors.length || !pastePlan.updates.length} onClick={() => run('批量粘贴', d => applyPaste(d, pastePlan!), true)}>确认粘贴</button></>}</>}
       {dialog === 'fill' && <><label>填充值<input value={fill} onChange={e => setFill(e.target.value)}/></label><p>所有目标字段类型验证通过后一次写入。空白值清空区域。</p><button onClick={() => run('批量填充', d => fillCells(d, ids, selectedCols, fill))}>应用到 {ids.length * selectedCols.length} 个单元格</button></>}
       {dialog === 'summary' && <><label>完成状态字段<select value={completion} onChange={e => setCompletion(e.target.value)}><option value="">不显示完成进度</option>{cols.map(f => <option key={f}>{f}</option>)}</select></label><label>数字字段<select value={number} onChange={e => setNumber(e.target.value)}><option value="">不显示数字汇总</option>{cols.filter(f => sheet.fields[f].type === 'number').map(f => <option key={f}>{f}</option>)}</select></label><label>统计方式<select value={operation} onChange={e => setOperation(e.target.value as typeof operation)}><option value="sum">求和</option><option value="average">平均</option><option value="min">最小</option><option value="max">最大</option></select></label><p>统计全部后代叶子行。完成值支持勾选或「已完成」「完成」「Done」。</p><button onClick={() => run('设置父节点汇总', d => { gridMeta(d).summary = { completionField: completion || undefined, numberField: number || undefined, operation }; })}>保存设置</button></>}
-      {dialog === 'delete' && <><p>将删除选中的 {ids.length} 行。父节点包含的子行可提升或一起删除。</p><button onClick={() => run('删除行并提升子行', d => deleteRows(d, ids, false), true)}>删除并提升子行</button><button onClick={() => run('删除子树', d => deleteRows(d, ids, true), true)}>连同全部子行删除</button><p>额外子行数 {new Set(ids.flatMap(id => descendants(sheet, id)).filter(id => !ids.includes(id))).size}</p></>}
+      {dialog === 'delete' && deleteMode === 'columns' && <><p>将删除选中的 {selectedCols.length} 列及其内容，操作前会创建快照。</p><p>{selectedCols.join('、')}</p><button onClick={() => run('删除选中列', candidate => {
+          if (selectedCols.some(field => candidate.fields[field]?.primary)) throw new Error('主字段需要保留，请调整选区');
+          for (const field of selectedCols) applySheetMessage(candidate, { type: 'deleteField', name: field });
+      }, true)}>删除选中列</button></>}
+      {dialog === 'delete' && deleteMode === 'rows' && <><p>将删除选中的 {ids.length} 行。父节点包含的子行可提升或一起删除。</p><button onClick={() => run('删除行并提升子行', d => deleteRows(d, ids, false), true)}>删除并提升子行</button><button onClick={() => run('删除子树', d => deleteRows(d, ids, true), true)}>连同全部子行删除</button><p>额外子行数 {new Set(ids.flatMap(id => descendants(sheet, id)).filter(id => !ids.includes(id))).size}</p></>}
       {error && <p role="alert" className="personal-grid-error">{error}</p>}<footer><button onClick={() => { setDialog(null); setError(''); }}>关闭</button></footer>
     </FloatingPanel>}
   </div>;

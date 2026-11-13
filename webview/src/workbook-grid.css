@@ -24,3 +24,42 @@
 @media (hover: none) {
   .personal-row-head > button[title="行详情"] { opacity: 1; }
 }
+
+.spreadsheet-cell {
+  min-height: var(--bt-row-h, 38px);
+  white-space: inherit;
+  cursor: cell;
+  outline: none;
+  user-select: none;
+  overflow: hidden;
+}
+.spreadsheet-cell > span { overflow: hidden; text-overflow: ellipsis; }
+.spreadsheet-cell:not(.is-editing) > :first-child { flex: 1; min-width: 0; text-align: inherit; }
+.personal-grid-table:not(.wrap) .spreadsheet-cell { white-space: nowrap; }
+.personal-grid-table.wrap .spreadsheet-cell { white-space: pre-wrap; }
+.spreadsheet-cell.is-editing { padding: 0 8px; cursor: text; overflow: visible; }
+.personal-grid-table td .spreadsheet-input,
+.personal-grid-table td .spreadsheet-input:focus {
+  display: block;
+  width: 100%;
+  min-height: var(--bt-row-h, 38px);
+  margin: 0;
+  padding: 4px 0;
+  border: 0 !important;
+  border-radius: 0;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  text-decoration: inherit;
+  resize: none;
+  user-select: text;
+  box-sizing: border-box;
+}
+.personal-grid-table td textarea.spreadsheet-input { white-space: pre-wrap; }
+.spreadsheet-error { color: var(--text-error, #d44); font-size: 11px; white-space: normal; }
+.personal-format-toolbar { display: flex; gap: 3px; padding: 3px 5px; }
+.personal-context .personal-format-toolbar button { flex: 1; width: auto; padding: 5px 8px; text-align: center; }
+.personal-context button[aria-pressed=true] { color: var(--bt-accent); background: var(--bt-hover); box-shadow: inset 0 0 0 1px var(--bt-accent); }

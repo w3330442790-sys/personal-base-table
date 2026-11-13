@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { BaseDoc, FieldDef } from '../../src/core/types';
+import type { StyleMap } from '../../src/core/cell-style';
 import { genId } from '../../src/core/types';
 import { typedValue } from '../../src/core/features';
 import { addSheet, clone as copy, getSheet as sheetAt, workbook as personal, remapRecords } from '../../src/core/workbook';
 
 type Rule = { id: string; field: string; op: string; value?: unknown; target: 'cell' | 'row'; color?: string; background?: string };
 type Merge = { id: string; rowIds: string[]; fields: string[]; original: Record<string, unknown>; display?: unknown };
-type Grid = { rules?: Rule[]; summary?: { completionField?: string; numberField?: string; operation?: 'sum' | 'average' | 'min' | 'max' }; parents?: Record<string, string>; collapsed?: string[]; merges?: Merge[] };
+type Grid = { cellStyles?: StyleMap; rules?: Rule[]; summary?: { completionField?: string; numberField?: string; operation?: 'sum' | 'average' | 'min' | 'max' }; parents?: Record<string, string>; collapsed?: string[]; merges?: Merge[] };
 type Template = { id: string; name: string; data: BaseDoc };
 type Personal = { version: 1; id: string; main: { id: string; name: string }; sheets: Array<{ id: string; name: string; data: BaseDoc }>; order: string[]; templates?: Template[] };
 type ExtendedDoc = BaseDoc & { personalGrid?: Grid; personal?: Personal };
@@ -128,9 +129,60 @@ export function HistorySheetDifference({ current, snapshot }: { current: BaseDoc
 
 const titles = { search: '查找与替换', format: '条件格式与父行汇总', details: '行详情', templates: '模板', history: '历史快照', move: '跨表移动' };
 export function FeaturePanels(props: FeaturePanelsProps) {
+  const panelRef = useRef<HTMLElement>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number } | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const constrain = (left: number, top: number) => {
+    const panel = panelRef.current;
+    const owner = panel?.closest<HTMLElement>('.personal-workbook') ?? panel?.parentElement;
+    if (!panel || !owner) return { left, top };
+    return {
+      left: Math.max(8, Math.min(left, owner.clientWidth - panel.offsetWidth - 8)),
+      top: Math.max(8, Math.min(top, owner.clientHeight - panel.offsetHeight - 8)),
+    };
+  };
+  useEffect(() => {
+    const panel = panelRef.current;
+    const owner = panel?.closest<HTMLElement>('.personal-workbook') ?? panel?.parentElement;
+    const ownerWindow = panel?.ownerDocument.defaultView;
+    if (!panel || !owner || !ownerWindow) return;
+    const reclamp = () => setPosition(current => {
+      if (!current) return current;
+      const next = constrain(current.left, current.top);
+      return next.left === current.left && next.top === current.top ? current : next;
+    });
+    reclamp();
+    const observer = ownerWindow.ResizeObserver ? new ownerWindow.ResizeObserver(reclamp) : null;
+    observer?.observe(owner);
+    observer?.observe(panel);
+    ownerWindow.addEventListener('resize', reclamp);
+    return () => {
+      observer?.disconnect();
+      ownerWindow.removeEventListener('resize', reclamp);
+      dragRef.current = null;
+    };
+  }, [props.panel]);
+  const beginDrag = (event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || !event.isPrimary || (event.target as Element).closest('button, a, input, select, textarea')) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: panel.offsetLeft, top: panel.offsetTop };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+  const moveDrag = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setPosition(constrain(drag.left + event.clientX - drag.startX, drag.top + event.clientY - drag.startY));
+  };
+  const endDrag = (event: React.PointerEvent<HTMLElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   if (!props.panel) return null;
-  return <aside className="feature-panel" aria-label={titles[props.panel]} onKeyDown={event => { if (event.key === 'Escape') props.onClose(); }}>
-    <header><h2>{titles[props.panel]}</h2><button aria-label="关闭面板" onClick={props.onClose}>×</button></header>
+  return <aside ref={panelRef} className="feature-panel" role="dialog" aria-label={titles[props.panel]} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); props.onClose(); } }}>
+    <header title="拖动标题栏移动窗口" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={() => { dragRef.current = null; }}><h2>{titles[props.panel]}</h2><button aria-label="关闭面板" onClick={props.onClose}>×</button></header>
     <div className="feature-panel-body">
       {props.panel === 'search' && <SearchPanel {...props} />}
       {props.panel === 'format' && <FormatPanel {...props} />}
@@ -307,6 +359,7 @@ function templateData(sheet: BaseDoc, mode: string, selected: string[]): BaseDoc
   }
   const ids = new Set(result.records.map(row => String(row.id)));
   if (result.personalGrid) {
+    if (result.personalGrid.cellStyles) result.personalGrid.cellStyles = Object.fromEntries(Object.entries(result.personalGrid.cellStyles).filter(([id]) => ids.has(id)));
     result.personalGrid.parents = Object.fromEntries(Object.entries(result.personalGrid.parents ?? {}).filter(([child, parent]) => ids.has(child) && ids.has(parent)));
     result.personalGrid.collapsed = (result.personalGrid.collapsed ?? []).filter(id => ids.has(id));
     result.personalGrid.merges = (result.personalGrid.merges ?? []).filter(merge => merge.rowIds.every(id => ids.has(id)));
@@ -338,6 +391,7 @@ function TemplatesPanel(props: FeaturePanelsProps) {
         sheet.records.push(...instance.records);
         const target = grid(sheet);
         target.parents = { ...target.parents, ...instance.personalGrid?.parents };
+        if (instance.personalGrid?.cellStyles) target.cellStyles = { ...target.cellStyles, ...instance.personalGrid.cellStyles };
         target.collapsed = [...(target.collapsed ?? []), ...(instance.personalGrid?.collapsed ?? [])];
         target.merges = [...(target.merges ?? []), ...(instance.personalGrid?.merges ?? [])];
       });
@@ -400,6 +454,17 @@ function MovePanel(props: FeaturePanelsProps) {
         });
         const originalGrid = grid(source);
         const destinationGrid = grid(destination);
+        if (originalGrid.cellStyles) {
+          const movedStyles: StyleMap = {};
+          for (const [id, styles] of Object.entries(originalGrid.cellStyles)) {
+            if (!ids.has(id)) continue;
+            const cells = Object.fromEntries(Object.entries(styles).filter(([field]) => mappedField(field)).map(([field, style]) => [mappedField(field), copy(style)]));
+            if (Object.keys(cells).length) movedStyles[ids.get(id)!] = cells;
+          }
+          if (Object.keys(movedStyles).length) destinationGrid.cellStyles = { ...destinationGrid.cellStyles, ...movedStyles };
+          originalGrid.cellStyles = Object.fromEntries(Object.entries(originalGrid.cellStyles).filter(([id]) => !ids.has(id)));
+          if (!Object.keys(originalGrid.cellStyles).length) delete originalGrid.cellStyles;
+        }
         const parents = originalGrid.parents ?? {};
         destinationGrid.parents ??= {};
         for (const [child, parent] of Object.entries(parents)) if (ids.has(child) && ids.has(parent)) destinationGrid.parents[ids.get(child)!] = ids.get(parent)!;
