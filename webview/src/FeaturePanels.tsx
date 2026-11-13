@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BaseDoc, FieldDef } from '../../src/core/types';
 import type { StyleMap } from '../../src/core/cell-style';
 import { genId } from '../../src/core/types';
 import { typedValue } from '../../src/core/features';
 import { DataToolsPanel } from './DataToolsPanel';
+import { floatingPosition, visibleOwnerBounds, visibleViewport } from './floating';
 import { addSheet, clone as copy, getSheet as sheetAt, workbook as personal, remapRecords } from '../../src/core/workbook';
 
 type Rule = { id: string; field: string; op: string; value?: unknown; target: 'cell' | 'row'; color?: string; background?: string };
@@ -132,34 +133,48 @@ const titles = { search: '查找与替换', format: '条件格式与父行汇总
 export function FeaturePanels(props: FeaturePanelsProps) {
   const panelRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number } | null>(null);
-  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number; maxWidth: number; maxHeight: number } | null>(null);
   const constrain = (left: number, top: number) => {
     const panel = panelRef.current;
     const owner = panel?.closest<HTMLElement>('.personal-workbook') ?? panel?.parentElement;
-    if (!panel || !owner) return { left, top };
-    return {
-      left: Math.max(8, Math.min(left, owner.clientWidth - panel.offsetWidth - 8)),
-      top: Math.max(8, Math.min(top, owner.clientHeight - panel.offsetHeight - 8)),
-    };
+    const view = panel?.ownerDocument.defaultView;
+    if (!panel || !owner || !view) return { left, top, maxWidth: 0, maxHeight: 0 };
+    const rect = owner.getBoundingClientRect();
+    const bounds = visibleOwnerBounds({ left: rect.left + owner.clientLeft, top: rect.top + owner.clientTop, width: owner.clientWidth, height: owner.clientHeight }, visibleViewport(view));
+    const maxWidth = Math.max(0, bounds.width - 16);
+    const maxHeight = Math.max(0, Math.min(owner.clientHeight - 64, bounds.height - 16));
+    panel.style.maxWidth = `${maxWidth}px`;
+    panel.style.maxHeight = `${maxHeight}px`;
+    // Absolute offsets start at the containing block's padding edge, including scroll.
+    const container = (panel.offsetParent as HTMLElement | null) ?? owner;
+    const containerRect = container.getBoundingClientRect();
+    const localLeft = rect.left + owner.clientLeft + bounds.left - containerRect.left - container.clientLeft + container.scrollLeft;
+    const localTop = rect.top + owner.clientTop + bounds.top - containerRect.top - container.clientTop + container.scrollTop;
+    return { ...floatingPosition(left, top, panel.offsetWidth, panel.offsetHeight, bounds.width, bounds.height, localLeft, localTop), maxWidth, maxHeight };
   };
-  useEffect(() => {
+  useLayoutEffect(() => {
     const panel = panelRef.current;
     const owner = panel?.closest<HTMLElement>('.personal-workbook') ?? panel?.parentElement;
     const ownerWindow = panel?.ownerDocument.defaultView;
     if (!panel || !owner || !ownerWindow) return;
     const reclamp = () => setPosition(current => {
-      if (!current) return current;
-      const next = constrain(current.left, current.top);
-      return next.left === current.left && next.top === current.top ? current : next;
+      const next = constrain(current?.left ?? panel.offsetLeft, current?.top ?? panel.offsetTop);
+      return current && next.left === current.left && next.top === current.top && next.maxWidth === current.maxWidth && next.maxHeight === current.maxHeight ? current : next;
     });
     reclamp();
     const observer = ownerWindow.ResizeObserver ? new ownerWindow.ResizeObserver(reclamp) : null;
     observer?.observe(owner);
     observer?.observe(panel);
     ownerWindow.addEventListener('resize', reclamp);
+    panel.ownerDocument.addEventListener('scroll', reclamp, true);
+    ownerWindow.visualViewport?.addEventListener('resize', reclamp);
+    ownerWindow.visualViewport?.addEventListener('scroll', reclamp);
     return () => {
       observer?.disconnect();
       ownerWindow.removeEventListener('resize', reclamp);
+      panel.ownerDocument.removeEventListener('scroll', reclamp, true);
+      ownerWindow.visualViewport?.removeEventListener('resize', reclamp);
+      ownerWindow.visualViewport?.removeEventListener('scroll', reclamp);
       dragRef.current = null;
     };
   }, [props.panel]);
@@ -182,7 +197,7 @@ export function FeaturePanels(props: FeaturePanelsProps) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   if (!props.panel) return null;
-  return <aside ref={panelRef} className="feature-panel" role="dialog" aria-label={titles[props.panel]} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); props.onClose(); } }}>
+  return <aside ref={panelRef} className="feature-panel" role="dialog" aria-label={titles[props.panel]} style={position ? { ...position, right: 'auto' } : undefined} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); props.onClose(); } }}>
     <header title="拖动标题栏移动窗口" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={() => { dragRef.current = null; }}><h2>{titles[props.panel]}</h2><button aria-label="关闭面板" onClick={props.onClose}>×</button></header>
     <div className="feature-panel-body">
       {props.panel === 'search' && <SearchPanel {...props} />}

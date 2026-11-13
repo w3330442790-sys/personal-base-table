@@ -1,0 +1,48 @@
+.personal-workbook { min-width: 0; overflow: hidden; box-sizing: border-box; }
+.ribbon-collapsed .ribbon-groups { display: none; }
+.ribbon-tabs .ribbon-collapse-toggle { margin-left: 4px; font-size: 12px; }
+.tablet-formula-actions { display: none; }
+.tablet-keyboard-open .ribbon-groups { display: none; }
+.tablet-keyboard-open .personal-grid-hint { display: none; }
+.tablet-keyboard-open .ribbon-tabs strong, .tablet-keyboard-open .ribbon-tabs input[type=search] { display: none; }
+.workbook-dialog { box-sizing: border-box; max-height: calc(100% - 16px); overflow-y: auto; }
+.sheet-tabs { flex: 0 0 auto; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+
+@media (any-pointer: coarse) {
+  .personal-workbook button, .personal-floating-root button { min-height: 44px; min-width: 44px; touch-action: manipulation; }
+  .personal-workbook input:not([type=checkbox]):not([type=radio]), .personal-workbook select, .personal-workbook textarea,
+  .personal-floating-root input:not([type=checkbox]):not([type=radio]), .personal-floating-root select, .personal-floating-root textarea { min-height: 44px; font-size: 16px; }
+  .ribbon-tabs { flex-wrap: nowrap; overflow-x: auto; gap: 2px; padding: 2px 6px; }
+  .ribbon-tabs>* { flex-shrink: 0; }
+  .ribbon-tabs strong, .ribbon-status { display: none; }
+  .ribbon-tabs button { padding: 4px 10px; }
+  .ribbon-tabs input[type=search] { width: 120px; }
+  .ribbon-groups { min-height: 0; max-height: 130px; padding: 4px 6px; overscroll-behavior-x: contain; }
+  .ribbon-group>div { max-width: 330px; gap: 3px; }
+  .ribbon-color input[type=color] { width: 44px; height: 44px; }
+  .ribbon-formula-bar { gap: 4px; padding: 3px 6px; }
+  .ribbon-formula-bar output { min-width: 40px; max-width: 70px; }
+  .tablet-formula-actions { display: flex; gap: 3px; }
+  .personal-grid-scroll { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; min-height: 60px; }
+  .personal-grid-table td { -webkit-touch-callout: none; }
+  .personal-grid-table td:not(:focus-within) { user-select: none; -webkit-user-select: none; }
+  .personal-grid-table td>.cellbox, .personal-grid-table td>.cell-select { min-height: 44px; }
+  .personal-row-head button { padding: 4px; }
+  .personal-grid-hint { display: none; }
+  .personal-grid-tools { gap: 5px; padding: 4px 6px; }
+  .personal-grid-tools>label { min-height: 44px; }
+  .sheet-tabs { flex-wrap: nowrap; overflow-x: auto; gap: 4px; padding-left: max(6px, env(safe-area-inset-left)); }
+  .sheet-tab-wrap { flex-shrink: 0; }
+  .sheet-menu { position: fixed; left: 12px; bottom: max(64px, env(safe-area-inset-bottom)); max-height: 50vh; overflow-y: auto; }
+  .feature-panel-body { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .feature-panel > header { padding: 4px 12px; }
+  .feature-panel-body { padding: 12px; }
+  .personal-floating-root [role=menu], .personal-floating-root [role=dialog] { overscroll-behavior: contain; }
+  .personal-workbook input[type=checkbox], .personal-workbook input[type=radio] { width: 22px; height: 22px; }
+}
+
+@media (any-pointer: coarse) and (max-height: 550px) {
+  .ribbon-groups { max-height: 98px; }
+  .ribbon-group small { display: none; }
+  .ribbon-tabs input[type=search] { width: 100px; }
+}

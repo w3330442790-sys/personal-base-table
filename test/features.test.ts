@@ -10,6 +10,45 @@ test('insert inherits siblings, duplicate generates IDs, delete promotes descend
 test('fill validates every target before writes', () => { const d = make(); assert.throws(() => fillCells(d, ['a'], ['title', 'n'], 'bad')); assert.equal(d.records[0].title, 'A'); });
 test('subtree deletion and unmerge can keep edited display', () => { const d = make(); assignParent(d, 'a', ['b']); assignParent(d, 'b', ['c']); deleteRows(d, ['b'], false); assert.equal(gridMeta(d).parents!.c, 'a'); mergeCells(d, ['a'], ['title', 'n']); const m = gridMeta(d).merges![0]; m.display = 'edited'; unmergeCells(d, m.id, true); assert.equal(d.records[0].title, 'edited'); assert.equal(d.records[0].n, 1); deleteRows(d, ['a'], true); assert.equal(d.records.length, 0); });
 test('siblings sort independently and collapse keeps subtree intact', () => { const d = make(); d.records.push({ id: 'd', title: 'D', n: 0 }); assignParent(d, 'a', ['b']); assignParent(d, 'b', ['c']); assert.deepEqual(deriveRows(d, { name: 'sort', sorts: [{ field: 'n', dir: 'asc' }] }).map(r => r.id), ['d', 'a', 'b', 'c']); });
+
+test('large flat tables inspect parent links a bounded number of times per row', () => {
+    const d = make();
+    const count = 10000;
+    d.records = Array.from({ length: count }, (_, i) => ({ id: String(i), n: i }));
+    let parentReads = 0;
+    gridMeta(d).parents = new Proxy({}, { get() { parentReads++; return undefined; } });
+    const rows = deriveRows(d, { name: 'All' });
+    assert.equal(rows.length, count);
+    assert.equal(rows[0].id, '0');
+    assert.equal(rows.at(-1)!.id, String(count - 1));
+    assert.ok(parentReads <= count * 10, `Parent lookups must scale linearly; read ${parentReads} for ${count} rows`);
+});
+
+test('deep hierarchies retain filtered ancestors without repeated walks or recursion', () => {
+    const d = make();
+    const count = 15000;
+    d.records = Array.from({ length: count }, (_, i) => ({ id: String(i), n: i }));
+    const parents = Object.fromEntries(d.records.slice(1).map((row, i) => [row.id, String(i)]));
+    let parentReads = 0;
+    gridMeta(d).parents = new Proxy(parents, { get(target, key) { parentReads++; return Reflect.get(target, key); } });
+    const rows = deriveRows(d, { name: 'All' });
+    assert.equal(rows.length, count);
+    assert.equal(rows.at(-1)!.id, String(count - 1));
+    assert.ok(parentReads <= count * 10, `Ancestor walks must scale linearly; read ${parentReads} for ${count} rows`);
+    const filtered = deriveRows(d, { name: 'Filtered', filters: [{ field: 'n', op: 'eq', value: count - 1 }] });
+    assert.equal(filtered.length, count);
+    assert.equal(filtered[0].contextOnly, true);
+    assert.equal(filtered.at(-1)!.contextOnly, false);
+});
+
+test('orphan rows stay roots and unreachable cycles stay hidden', () => {
+    const d = make();
+    d.records.push({ id: 'd', n: 4 }, { id: 'e', n: 5 });
+    gridMeta(d).parents = { a: 'missing', b: 'c', c: 'b', d: 'd', e: 'a' };
+    assert.deepEqual(deriveRows(d, { name: 'All' }).map(row => row.id), ['a', 'e']);
+    const filtered = deriveRows(d, { name: 'Filtered', filters: [{ field: 'n', op: 'eq', value: 5 }] });
+    assert.deepEqual(filtered.map(row => [row.id, row.contextOnly]), [['a', true], ['e', false]]);
+});
 test('paste detects merge collisions and validates options and dates', () => { const d = make(); d.fields.date = { type: 'date' }; d.fields.choice = { type: 'select', options: ['yes'] }; mergeCells(d, ['a'], ['title', 'n']); assert.ok(planPaste(d, ['a'], ['title', 'n'], 0, 0, [['X', '4']]).errors.length); assert.ok(planPaste(d, ['a'], ['date', 'choice'], 0, 0, [['2026-02-30', 'no']]).errors.length === 2); });
 test('unmerge restores originally absent fields after JSON round trip', () => { const d = make(); delete d.records[0].title; mergeCells(d, ['a'], ['title', 'n']); const round = JSON.parse(JSON.stringify(d)); round.records[0].title = 'temporary'; unmergeCells(round, gridMeta(round).merges![0].id); assert.equal(Object.hasOwn(round.records[0], 'title'), false); });
 test('checkbox conversion is explicit and blank clears all typed fields', () => {

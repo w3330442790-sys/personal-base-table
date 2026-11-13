@@ -6,5 +6,6 @@ import "./workbook.css";
 import "./workbook-grid.css";
 import "./feature-panels.css";
 import "./ribbon.css";
+import "./tablet.css";
 
 createRoot(document.getElementById("root")!).render(<WorkbookApp />);

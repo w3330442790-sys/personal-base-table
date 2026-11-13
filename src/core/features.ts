@@ -108,33 +108,48 @@ export function deriveRows(sheet: BaseDoc, view: ViewDef): DerivedRow[] {
     const all = sheetRows(sheet);
     const meta = readGridMeta(sheet);
     const parents = meta.parents ?? {};
-    const collapsed = meta.collapsedByView?.[view.name] ?? meta.collapsed ?? [];
+    const collapsed = new Set(meta.collapsedByView?.[view.name] ?? meta.collapsed ?? []);
     const matched = new Set(applyView(all, view, sheet.fields).map(r => r.id));
     const keep = new Set(matched);
+    const expanded = new Set<string>();
     for (const id of matched) {
-        let p = parents[id];
-        const seen = new Set([id]);
-        while (p && !seen.has(p)) {
-            seen.add(p);
-            keep.add(p);
-            p = parents[p];
+        let current: string | undefined = id;
+        while (current !== undefined && !expanded.has(current)) {
+            expanded.add(current);
+            const parent: string | undefined = parents[current];
+            if (parent) keep.add(parent);
+            current = parent || undefined;
         }
     }
     const byId = new Map(all.map(r => [r.id, r]));
+    // Build sibling buckets once instead of rescanning every row for each node.
+    const children = new Map<string | undefined, Row[]>();
+    for (const row of all) {
+        if (!keep.has(row.id)) continue;
+        const candidate = parents[row.id];
+        const parent = candidate && byId.has(candidate) ? candidate : undefined;
+        let siblings = children.get(parent);
+        if (!siblings) children.set(parent, siblings = []);
+        siblings.push(row);
+    }
     const result: DerivedRow[] = [];
     const seen = new Set<string>();
-    const visit = (parent?: string) => {
-        const siblings = all.filter(r => (parents[r.id] && byId.has(parents[r.id]) ? parents[r.id] : undefined) === parent && keep.has(r.id));
-        for (const row of applyView(siblings, { name: view.name, sorts: view.sorts }, sheet.fields)) {
-            if (seen.has(row.id))
-                continue;
-            seen.add(row.id);
-            result.push({ ...row, contextOnly: !matched.has(row.id) });
-            if (!collapsed.includes(row.id))
-                visit(row.id);
+    const sortedChildren = (parent?: string) => applyView(children.get(parent) ?? [], { name: view.name, sorts: view.sorts }, sheet.fields);
+    // Iterators keep preorder traversal without consuming the JS call stack.
+    const stack = [sortedChildren()[Symbol.iterator]()];
+    while (stack.length) {
+        const next = stack[stack.length - 1].next();
+        if (next.done) {
+            stack.pop();
+            continue;
         }
-    };
-    visit();
+        const row = next.value;
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        result.push({ ...row, contextOnly: !matched.has(row.id) });
+        if (!collapsed.has(row.id) && children.has(row.id))
+            stack.push(sortedChildren(row.id)[Symbol.iterator]());
+    }
     return result;
 }
 export function insertRows(sheet: BaseDoc, anchor: string | undefined, side: 'above' | 'below', count = 1, duplicate = false): string[] {

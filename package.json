@@ -2,7 +2,7 @@
   "name": "personal-base-table",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "w3330442790-sys",
   "icon": "media/logo.png",
   "license": "MIT",

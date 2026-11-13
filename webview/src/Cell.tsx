@@ -109,6 +109,17 @@ function SpreadsheetCell({ def, value, displayValue, colorful, onCommit, onNavig
   const latest = useRef("");
   const initial = value == null ? "" : String(value);
 
+  // Dispatching synchronously from the touch edit button keeps keyboard activation
+  // inside the original user gesture, as required by Android WebView.
+  const touchEdit = useRef<() => void>(() => {});
+  touchEdit.current = () => { if (!editing) begin(); };
+  useEffect(() => {
+    const element = display.current;
+    const edit = () => touchEdit.current();
+    element?.addEventListener("personal-edit-cell", edit);
+    return () => element?.removeEventListener("personal-edit-cell", edit);
+  }, []);
+
   const begin = (seed = initial) => {
     finishing.current = false;
     latest.current = seed;

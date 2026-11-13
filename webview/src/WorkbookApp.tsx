@@ -4,19 +4,20 @@ import { genId } from "../../src/core/types";
 import { toTable } from "../../src/core/doc";
 import { addSheet, clone, duplicateSheet, getSheet, listSheets, removeSheet, renameSheet, validateWorkbook, workbook, WorkbookSession } from "../../src/core/workbook";
 import { applySheetMessage, type SheetMessage } from "../../src/core/messages";
-import { deriveRows, readGridMeta, unmergeCells } from "../../src/core/features";
+import { readGridMeta, unmergeCells } from "../../src/core/features";
 import { replaceAll } from "../../src/core/ops";
 import type { SnapshotMetadata } from "../../src/core/snapshots";
 import { App } from "./App";
-import { WorkbookGrid } from "./WorkbookGrid";
+import { ProjectedWorkbookGrid } from "./ProjectedWorkbookGrid";
 import { FeaturePanels } from "./FeaturePanels";
 import { defaultHost, type Host, type InMsg, type OutMsg } from "./host";
 import { defaultConfig } from "./config";
 import { WorkbookRibbon } from "./WorkbookRibbon";
-import { calculatedSheet, rebaseFormulas } from "../../src/core/formulas";
+import { rebaseFormulas } from "../../src/core/formulas";
 import { formatCells } from "../../src/core/cell-style";
 import { typedValue } from "../../src/core/features";
 import { updateCell } from "../../src/core/ops";
+import { useTabletViewport } from "./useTabletViewport";
 
 type Result = Extract<InMsg, { type: "operationResult" }>;
 type FeaturePanel = "search" | "format" | "details" | "templates" | "history" | "move" | "data" | null;
@@ -35,6 +36,8 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   const failedDraft = useRef<{ doc: BaseDoc; owner: WorkbookSession; revision: number; label: string; sheetId: string; focusSheet?: string } | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
   const [document, setDocument] = useState<BaseDoc | null>(null);
+  const workbookRoot = useRef<HTMLDivElement>(null);
+  const tabletViewport = useTabletViewport(workbookRoot, !!document);
   const [active, setActive] = useState("main");
   const [panel, setPanel] = useState<FeaturePanel>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -287,7 +290,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
     if (next === "details") setDetailId(selectedRows[0] ?? null);
     setPanel(next);
   };
-  return <div className="personal-workbook" aria-busy={busy} onKeyDownCapture={event => {
+  return <div ref={workbookRoot} className={`personal-workbook${tabletViewport.keyboard ? " tablet-keyboard-open" : ""}`} style={{ maxHeight: tabletViewport.height }} aria-busy={busy} onKeyDownCapture={event => {
     if ((event.ctrlKey || event.metaKey) && ["f", "h"].includes(event.key.toLowerCase())) { event.preventDefault(); event.stopPropagation(); setPanel("search"); }
   }}>
     {error && <div className="workbook-error" role="alert">{error}<button aria-label="关闭提示" onClick={() => setError("")}>×</button></div>}
@@ -312,7 +315,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
               if (merge) merge.display = value;
               else updateCell(candidate, id, field, typedValue(value, candidate.fields[field]));
             })} />}
-        renderTable={props => <WorkbookGrid {...props} command={gridCommand} viewId={props.view.name} sheet={sheet} rows={deriveRows(calculatedSheet(sheet), props.view)} transact={transact}
+          renderTable={props => <ProjectedWorkbookGrid {...props} command={gridCommand} viewId={props.view.name} sheet={sheet} transact={transact}
           onDetail={id => { setDetailId(id); setPanel("details"); }}
           onSelection={(ids, cols) => { setSelectedRows(ids); setSelectedCols(cols); }}
           onMoveToSheet={ids => { setSelectedRows(ids); setPanel("move"); }} />}

@@ -10,6 +10,7 @@ import { applySheetMessage } from '../../src/core/messages';
 import type { UIConfig } from './config';
 import { FloatingPanel } from './FloatingPanel';
 import { belowAnchor, pointerAnchor, type FloatingAnchor } from './floating';
+import { GridTouchGesture } from './grid-touch';
 import { gridWidth, rowHeaderWidth, ROW_HEADER_KEY } from './grid-layout';
 interface Props {
     command?: { id: number; kind: string; value?: string | number };
@@ -112,27 +113,30 @@ function htmlStyles(html: string): CellStyle[][] | undefined {
 }
 export function WorkbookGrid(props: Props) {
     const { sheet, config, transact } = props;
-    const groupedRows = groupRows(props.rows, props.groupField);
     const viewId = props.viewId ?? sheet.views[0]?.name ?? '全部';
-    const meta = readGridMeta(sheet);
-    const cols = visibleGroupColumns(sheet, viewId, props.cols);
-    const fieldIndices = new Map(Object.keys(sheet.fields).map((field, index) => [field, index]));
-    const parentIds = new Set(Object.values(meta.parents ?? {}));
-    const frozenColumnIds = new Set(props.cols.slice(0, props.frozen ?? 0));
-    const renderedFrozenCount = cols.filter(field => frozenColumnIds.has(field)).length;
-    const columnGroups = meta.columnGroupsByView?.[viewId] ?? [];
-    const collapsedRows = meta.collapsedByView?.[viewId] ?? meta.collapsed ?? [];
-    const collapsedGroups = meta.collapsedGroupsByView?.[viewId] ?? meta.collapsedGroups ?? [];
-    const extras = meta as typeof meta & ViewGridExtras;
-    const heights = extras.rowHeightsByView?.[viewId] ?? {};
-    const visibleRows = groupedRows.filter(row => !props.groupField || !collapsedGroups.includes(text(row.values[props.groupField]) || '未分组'));
-    const frozenIds = new Set(extras.frozenRowsByView?.[viewId] ?? []);
-    const pinnedRows = visibleRows.filter(row => frozenIds.has(row.id));
-    const rows = [...pinnedRows, ...visibleRows.filter(row => !frozenIds.has(row.id))];
-    const pinnedIds = new Set(pinnedRows.map(row => row.id));
-    const sourceRows = [...pinnedRows, ...groupedRows.filter(row => !pinnedIds.has(row.id))];
-    const visibleRowMap = new Map(rows.map(row => [row.id, row]));
-    const rowIndices = new Map(rows.map((row, index) => [row.id, index]));
+    const { meta, cols, fieldIndices, parentIds, renderedFrozenCount, columnGroups, collapsedRows, collapsedGroups, extras, heights, pinnedRows, rows, pinnedIds, sourceRows, visibleRowMap, rowIndices } = useMemo(() => {
+        const groupedRows = groupRows(props.rows, props.groupField);
+        const meta = readGridMeta(sheet);
+        const cols = visibleGroupColumns(sheet, viewId, props.cols);
+        const fieldIndices = new Map(Object.keys(sheet.fields).map((field, index) => [field, index]));
+        const parentIds = new Set(Object.values(meta.parents ?? {}));
+        const frozenColumnIds = new Set(props.cols.slice(0, props.frozen ?? 0));
+        const renderedFrozenCount = cols.filter(field => frozenColumnIds.has(field)).length;
+        const columnGroups = meta.columnGroupsByView?.[viewId] ?? [];
+        const collapsedRows = meta.collapsedByView?.[viewId] ?? meta.collapsed ?? [];
+        const collapsedGroups = meta.collapsedGroupsByView?.[viewId] ?? meta.collapsedGroups ?? [];
+        const extras = meta as typeof meta & ViewGridExtras;
+        const heights = extras.rowHeightsByView?.[viewId] ?? {};
+        const visibleRows = groupedRows.filter(row => !props.groupField || !collapsedGroups.includes(text(row.values[props.groupField]) || '未分组'));
+        const frozenIds = new Set(extras.frozenRowsByView?.[viewId] ?? []);
+        const pinnedRows = visibleRows.filter(row => frozenIds.has(row.id));
+        const rows = [...pinnedRows, ...visibleRows.filter(row => !frozenIds.has(row.id))];
+        const pinnedIds = new Set(pinnedRows.map(row => row.id));
+        const sourceRows = [...pinnedRows, ...groupedRows.filter(row => !pinnedIds.has(row.id))];
+        const visibleRowMap = new Map(rows.map(row => [row.id, row]));
+        const rowIndices = new Map(rows.map((row, index) => [row.id, index]));
+        return { meta, cols, fieldIndices, parentIds, renderedFrozenCount, columnGroups, collapsedRows, collapsedGroups, extras, heights, pinnedRows, rows, pinnedIds, sourceRows, visibleRowMap, rowIndices };
+    }, [sheet, props.rows, props.groupField, props.cols, props.frozen, viewId]);
     const recordIndices = useMemo(() => new Map(sheet.records.map((row, index) => [String(row.id), index])), [sheet]);
     const rawRecords = useMemo(() => new Map(sheet.records.map(row => [String(row.id), row])), [sheet]);
     const calculated = useMemo(() => calculatedSheet(sheet), [sheet]);
@@ -161,6 +165,36 @@ export function WorkbookGrid(props: Props) {
     const frozenRowStyle = (id: string): CSSProperties => frozenTops.has(id) ? { position: 'sticky', top: frozenTops.get(id), zIndex: 4, background: 'var(--background-primary,var(--vscode-editor-background))' } : {};
     const root = useRef<HTMLDivElement>(null);
     const selecting = useRef(false);
+    const [touchRange, setTouchRange] = useState(false);
+    const [touchUsed, setTouchUsed] = useState(false);
+    const touchGesture = useRef(new GridTouchGesture());
+    const touchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const lastTouch = useRef(0);
+    const touchTap = useRef<() => void>(() => {});
+    const cancelTouch = () => { touchGesture.current.cancel(); clearTimeout(touchTimer.current); };
+    useEffect(() => {
+        const down = (event: PointerEvent) => { if (event.pointerType === 'touch' && !event.isPrimary) cancelTouch(); };
+        const move = (event: PointerEvent) => { touchGesture.current.move(event.pointerId, event.clientX, event.clientY); };
+        const up = (event: PointerEvent) => {
+            if (event.pointerType !== 'touch') return;
+            lastTouch.current = Date.now();
+            clearTimeout(touchTimer.current);
+            if (touchGesture.current.end(event.pointerId)) touchTap.current();
+        };
+        window.addEventListener('pointerdown', down, true);
+        window.addEventListener('pointermove', move, true);
+        window.addEventListener('pointerup', up, true);
+        window.addEventListener('pointercancel', cancelTouch, true);
+        window.addEventListener('scroll', cancelTouch, true);
+        return () => {
+            cancelTouch();
+            window.removeEventListener('pointerdown', down, true);
+            window.removeEventListener('pointermove', move, true);
+            window.removeEventListener('pointerup', up, true);
+            window.removeEventListener('pointercancel', cancelTouch, true);
+            window.removeEventListener('scroll', cancelTouch, true);
+        };
+    }, []);
     const dragFill = useRef<Selection | null>(null);
     const draggedRow = useRef<string | null>(null);
     const draggedCol = useRef<string | null>(null);
@@ -208,7 +242,7 @@ export function WorkbookGrid(props: Props) {
         window.addEventListener('mouseup', up);
         return () => { window.removeEventListener('mouseup', up); resizeCleanup.current(); };
     }, []);
-    useEffect(() => { setSelection(null); setMenu(null); setDialog(null); }, [cols.join('\0'), viewId]);
+    useEffect(() => { cancelTouch(); setSelection(null); setMenu(null); setDialog(null); }, [cols.join('\0'), viewId]);
     const run = (label: string, change: (sheet: BaseDoc) => void, destructive = false) => {
         try {
             transact(label, change, destructive);
@@ -231,22 +265,65 @@ export function WorkbookGrid(props: Props) {
         lastAnchor.current = anchor;
         setMenu({ id, anchor });
     };
-    const resizeColumn = (event: React.MouseEvent<HTMLElement>, col: string, width: number) => {
-        event.preventDefault();
-        event.stopPropagation();
-        resizeCleanup.current();
-        const target = event.currentTarget.parentElement!;
-        const start = event.clientX;
-        const owner = target.ownerDocument.defaultView!;
-        const nextWidth = (x: number) => col === ROW_HEADER_KEY ? Math.max(44, Math.min(160, width + x - start)) : Math.max(70, width + x - start);
-        const move = (mouse: MouseEvent) => { target.style.width = `${nextWidth(mouse.clientX)}px`; };
-        const cleanup = () => { owner.removeEventListener('mousemove', move); owner.removeEventListener('mouseup', up); };
-        const up = (mouse: MouseEvent) => { cleanup(); if (nextWidth(mouse.clientX) !== width) props.onResize(col, nextWidth(mouse.clientX)); };
+    const trackResize = (event: React.PointerEvent<HTMLElement>, preview: (event: PointerEvent) => void, commit: (event: PointerEvent) => void, restore: () => void) => {
+        if (event.button !== 0 || !event.isPrimary) return;
+        event.preventDefault(); event.stopPropagation(); cancelTouch(); resizeCleanup.current();
+        const handle = event.currentTarget;
+        const owner = handle.ownerDocument.defaultView!;
+        const pointerId = event.pointerId;
+        handle.setPointerCapture(pointerId);
+        const move = (next: PointerEvent) => { if (next.pointerId === pointerId) preview(next); };
+        const cancel = () => cleanup();
+        const cleanup = () => {
+            owner.removeEventListener('pointermove', move);
+            owner.removeEventListener('pointerup', up);
+            owner.removeEventListener('pointercancel', cancelled);
+            owner.removeEventListener('blur', cancel);
+            handle.removeEventListener('lostpointercapture', cancel);
+            if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+            restore();
+            resizeCleanup.current = () => {};
+        };
+        const cancelled = (next: PointerEvent) => { if (next.pointerId === pointerId) cleanup(); };
+        const up = (next: PointerEvent) => { if (next.pointerId === pointerId) { cleanup(); commit(next); } };
         resizeCleanup.current = cleanup;
-        owner.addEventListener('mousemove', move);
-        owner.addEventListener('mouseup', up);
+        owner.addEventListener('pointermove', move);
+        owner.addEventListener('pointerup', up);
+        owner.addEventListener('pointercancel', cancelled);
+        owner.addEventListener('blur', cancel);
+        handle.addEventListener('lostpointercapture', cancel);
     };
-    const choose = (point: Point, extend = false) => { setSelection(old => ({ start: extend && old ? old.start : point, end: point })); };
+    const resizeColumn = (event: React.PointerEvent<HTMLElement>, col: string, width: number) => {
+        const target = event.currentTarget.parentElement!;
+        const initial = target.style.width;
+        const start = event.clientX;
+        const nextWidth = (x: number) => col === ROW_HEADER_KEY ? Math.max(44, Math.min(160, width + x - start)) : Math.max(70, width + x - start);
+        trackResize(event, next => { target.style.width = `${nextWidth(next.clientX)}px`; }, next => {
+            if (nextWidth(next.clientX) !== width) props.onResize(col, nextWidth(next.clientX));
+        }, () => { target.style.width = initial; });
+    };
+    const startTouch = (event: React.PointerEvent<HTMLElement>, point: Point, id: string) => {
+        if (event.pointerType !== 'touch') return;
+        setTouchUsed(true);
+        lastTouch.current = Date.now();
+        if ((event.target as HTMLElement).closest('.is-editing,.select-pop')) return;
+        const gesture = touchGesture.current;
+        if (!gesture.begin(event.pointerId, event.clientX, event.clientY, Date.now(), event.isPrimary)) return;
+        const element = event.currentTarget;
+        touchTap.current = () => { choose(point, touchRange); setMenu(null); };
+        touchTimer.current = setTimeout(() => {
+            if (!gesture.hold(Date.now())) return;
+            if (!isSelected(point.row, point.col)) choose(point, touchRange);
+            openMenu(id, element, event.clientX, event.clientY);
+        }, 550);
+    };
+    const choose = (point: Point, extend = false) => {
+        setSelection(old => {
+            const start = extend && old ? old.start : point;
+            if (old && old.start.row === start.row && old.start.col === start.col && old.end.row === point.row && old.end.col === point.col) return old;
+            return { start, end: point };
+        });
+    };
     const focusPoint = (point: Point) => requestAnimationFrame(() => {
         const target = root.current?.querySelector<HTMLElement>(`td[data-row-index="${point.row}"][data-col-index="${point.col}"] .spreadsheet-cell`);
         (target ?? root.current)?.focus();
@@ -276,7 +353,7 @@ export function WorkbookGrid(props: Props) {
             setMenu(null);
         }
         catch {
-            setError('请在表格选区使用 Ctrl/Cmd+C 复制');
+            setError('已暂存到插件剪贴板，可用“粘贴”按钮继续操作；系统剪贴板暂不可用');
             setMenu(null);
         }
     };
@@ -316,7 +393,10 @@ export function WorkbookGrid(props: Props) {
                 }
                 openPaste(plain, html, custom, mode);
             } else openPaste(await navigator.clipboard.readText(), '', '', mode);
-        } catch { openPaste('', '', '', mode); }
+        } catch {
+            if (internalClipboard) openPaste(internalClipboard.plain, internalClipboard.html, encodeCellClipboard(internalClipboard.payload), mode);
+            else openPaste('', '', '', mode);
+        }
     };
     let columnOffset = headerWidth;
     const columnOffsets = cols.map(col => { const left = columnOffset; columnOffset += props.colWidths[col] ?? 160; return left; });
@@ -375,16 +455,19 @@ export function WorkbookGrid(props: Props) {
         } finally { probe.remove(); }
         run('自动适应行高', candidate => { const extra = gridMeta(candidate) as ViewGridExtras; Object.assign((extra.rowHeightsByView ??= {})[viewId] ??= {}, next); });
     };
-    const resizeRow = (event: React.MouseEvent<HTMLElement>, id: string) => {
-        event.preventDefault(); event.stopPropagation(); resizeCleanup.current();
+    const resizeRow = (event: React.PointerEvent<HTMLElement>, id: string) => {
         const target = event.currentTarget.closest('tr')!;
+        const initialHeight = target.style.height, initialVariable = target.style.getPropertyValue('--bt-row-h');
         const start = event.clientY, initial = target.getBoundingClientRect().height;
-        const owner = target.ownerDocument.defaultView!;
         const height = (y: number) => Math.max(26, Math.min(1200, Math.round(initial + y - start)));
-        const move = (mouse: MouseEvent) => { target.style.height = `${height(mouse.clientY)}px`; target.style.setProperty('--bt-row-h', `${height(mouse.clientY)}px`); };
-        const cleanup = () => { owner.removeEventListener('mousemove', move); owner.removeEventListener('mouseup', up); };
-        const up = (mouse: MouseEvent) => { cleanup(); if (height(mouse.clientY) !== Math.round(initial)) run('调整行高', candidate => { const extra = gridMeta(candidate) as ViewGridExtras; ((extra.rowHeightsByView ??= {})[viewId] ??= {})[id] = height(mouse.clientY); }); };
-        resizeCleanup.current = cleanup; owner.addEventListener('mousemove', move); owner.addEventListener('mouseup', up);
+        trackResize(event, next => {
+            target.style.height = `${height(next.clientY)}px`; target.style.setProperty('--bt-row-h', `${height(next.clientY)}px`);
+        }, next => {
+            if (height(next.clientY) !== Math.round(initial)) run('调整行高', candidate => {
+                const extra = gridMeta(candidate) as ViewGridExtras;
+                ((extra.rowHeightsByView ??= {})[viewId] ??= {})[id] = height(next.clientY);
+            });
+        }, () => { target.style.height = initialHeight; target.style.setProperty('--bt-row-h', initialVariable); });
     };
     useEffect(() => {
         if (!root.current || !pinnedRows.length || typeof ResizeObserver === 'undefined') return;
@@ -455,7 +538,7 @@ export function WorkbookGrid(props: Props) {
         run(sequence ? '序列填充' : '拖动填充', d => applyPaste(d, planPaste(d, rows.map(r => r.id), cols, last + 1, firstCol, matrix)));
         setSelection({ start: source.start, end: { row: targetRow, col: lastCol } });
     };
-    return <div className="personal-grid" style={{ "--personal-rownum-width": `${headerWidth}px` } as CSSProperties} ref={root} tabIndex={0} onKeyDown={event => {
+    return <div className={`personal-grid ${touchUsed ? 'personal-touch-used' : ''}`} style={{ "--personal-rownum-width": `${headerWidth}px` } as CSSProperties} ref={root} tabIndex={0} onKeyDown={event => {
             if ((event.target as HTMLElement).matches('input,textarea,select,[contenteditable=true]'))
                 return;
             if (event.key === 'Escape') {
@@ -492,11 +575,34 @@ export function WorkbookGrid(props: Props) {
         return; if (!selection)
         return; const data = copyData(); internalClipboard = { ...data, payload: makeCellClipboard(sheet, rawSelectedRows, selectedCols), rowCoordinates: selectedRows.map(row => recordIndices.get(row.id)!), columnCoordinates: selectedCols.map(field => fieldIndices.get(field)!) }; event.clipboardData.setData(CELL_CLIPBOARD_MIME, encodeCellClipboard(internalClipboard.payload)); event.preventDefault(); event.clipboardData.setData('text/plain', data.plain); event.clipboardData.setData('text/html', data.html); }} onPaste={event => { if ((event.target as HTMLElement).matches('input,textarea'))
         return; event.preventDefault(); openPaste(event.clipboardData.getData('text/plain'), event.clipboardData.getData('text/html'), event.clipboardData.getData(CELL_CLIPBOARD_MIME)); }}>
-    <div className="personal-grid-tools"><span>{ids.length} 行 × {selectedCols.length} 列</span><button onClick={event => show('paste', event.currentTarget)}>粘贴预览</button><button onClick={event => show('summary', event.currentTarget)}>父节点汇总</button><label><input type="checkbox" checked={sequence} onChange={e => setSequence(e.target.checked)}/>序列填充</label>{columnGroups.map(group => <span className="personal-column-group" key={group.id}><button title={group.fields.join('、')} onClick={() => run('折叠列组', d => {const target = gridMeta(d).columnGroupsByView?.[viewId]?.find(item => item.id === group.id);if (target) target.collapsed = !target.collapsed;})}>{group.collapsed ? '▸' : '▾'} {group.name}</button><button title="移除列组" onClick={() => run('移除列组', d => {const m=gridMeta(d); if(m.columnGroupsByView) m.columnGroupsByView[viewId] = (m.columnGroupsByView[viewId] ?? []).filter(item => item.id !== group.id);})}>×</button></span>)}<span className="personal-grid-hint">拖选单元格 · Shift 扩选 · 右键操作 · 右下角拖动填充</span></div>
+    <div className="personal-grid-tools"><div className="personal-touch-controls" aria-label="触屏选区操作">
+      <button aria-pressed={touchRange} onClick={() => setTouchRange(value => !value)}>范围选择{touchRange ? '：开' : '：关'}</button>
+      <button disabled={!selection} onClick={() => {
+          if (!selection) return;
+          const point = selection.end;
+          const cell = root.current?.querySelector<HTMLElement>(`td[data-row-index="${point.row}"][data-col-index="${point.col}"]`);
+          const editor = cell?.querySelector<HTMLElement>('.spreadsheet-cell');
+          if (editor) editor.dispatchEvent(new Event('personal-edit-cell'));
+          else {
+              const target = cell?.querySelector<HTMLElement>('.cell-select,input[type=checkbox],button[title="编辑"],input,textarea');
+              if (target?.matches('input:not([type=checkbox]),textarea')) target.focus();
+              else target?.click();
+          }
+      }}>编辑选中</button>
+      <button disabled={!selection} onClick={event => { if (ids[0]) { const rect = event.currentTarget.getBoundingClientRect(); openMenu(ids[0], event.currentTarget, rect.left, rect.bottom); } }}>选区操作</button>
+      <button disabled={!selection} onClick={event => show('fill', event.currentTarget)}>填充区域</button>
+      <span>点按选中 · 长按操作 · 开启范围后点按终点</span>
+    </div><span>{ids.length} 行 × {selectedCols.length} 列</span><button onClick={event => show('paste', event.currentTarget)}>粘贴预览</button><button onClick={event => show('summary', event.currentTarget)}>父节点汇总</button><label><input type="checkbox" checked={sequence} onChange={e => setSequence(e.target.checked)}/>序列填充</label>{columnGroups.map(group => <span className="personal-column-group" key={group.id}><button title={group.fields.join('、')} onClick={() => run('折叠列组', d => {const target = gridMeta(d).columnGroupsByView?.[viewId]?.find(item => item.id === group.id);if (target) target.collapsed = !target.collapsed;})}>{group.collapsed ? '▸' : '▾'} {group.name}</button><button title="移除列组" onClick={() => run('移除列组', d => {const m=gridMeta(d); if(m.columnGroupsByView) m.columnGroupsByView[viewId] = (m.columnGroupsByView[viewId] ?? []).filter(item => item.id !== group.id);})}>×</button></span>)}<span className="personal-grid-hint">拖选单元格 · Shift 扩选 · 右键操作 · 右下角拖动填充</span></div>
     {error && <div role="alert" className="personal-grid-error">{error}<button onClick={() => setError('')}>关闭</button></div>}
-    <div className="personal-grid-scroll"><table className={`personal-grid-table ${config.wrapText ? 'wrap' : ''}`} style={{ fontSize: config.fontSize || undefined, width: gridWidth(cols, props.colWidths), minWidth: gridWidth(cols, props.colWidths) }}><colgroup><col style={{ width: headerWidth }}/>{cols.map(c => <col key={c} style={{ width: props.colWidths[c] ?? 160 }}/>)}<col style={{ width: 36 }}/></colgroup>
-      <thead><tr><th className="personal-row-head" aria-label="行操作" style={{ width: headerWidth, minWidth: headerWidth, maxWidth: headerWidth }}>行<span className="personal-col-resize" title="拖动调整行号列宽度" onMouseDown={event => resizeColumn(event, ROW_HEADER_KEY, headerWidth)}/></th>{cols.map((col, ci) => <th key={col} data-field={col} style={frozenStyle(ci)} draggable onDragStart={() => { draggedCol.current = col; }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (draggedCol.current)
-        props.onReorderCols(draggedCol.current, col); draggedCol.current = null; }} onContextMenu={e => { e.preventDefault(); props.onHeaderMenu(col, e.clientX, e.clientY, e.currentTarget); }}><button onClick={e => { const header = e.currentTarget.closest("th")!; const rect = header.getBoundingClientRect(); props.onHeaderMenu(col, rect.left, rect.bottom + 4, header); }}>{columnLabel((fieldIndices.get(col) ?? 0))} {col} ▾</button><span className="personal-col-resize" title="拖动调整列宽，双击适应内容" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); autoColumnWidth([col]); }} onMouseDown={event => resizeColumn(event, col, props.colWidths[col] ?? 160)}/></th>)}<th><button onClick={props.onAddField} title="新增字段">＋</button></th></tr></thead>
+    <div className="personal-grid-scroll" onMouseDownCapture={event => {
+        if (Date.now() - lastTouch.current < 800 && (event.target as HTMLElement).closest('td[data-row-index]') && !(event.target as HTMLElement).closest('.is-editing,.select-pop')) { event.preventDefault(); event.stopPropagation(); }
+    }} onClickCapture={event => {
+        if (event.isTrusted && Date.now() - lastTouch.current < 800 && (event.target as HTMLElement).closest('td[data-row-index]') && !(event.target as HTMLElement).closest('.is-editing,.select-pop')) { event.preventDefault(); event.stopPropagation(); }
+    }} onDoubleClickCapture={event => {
+        if (Date.now() - lastTouch.current < 800) { event.preventDefault(); event.stopPropagation(); }
+    }}><table className={`personal-grid-table ${config.wrapText ? 'wrap' : ''}`} style={{ fontSize: config.fontSize || undefined, width: gridWidth(cols, props.colWidths), minWidth: gridWidth(cols, props.colWidths) }}><colgroup><col style={{ width: headerWidth }}/>{cols.map(c => <col key={c} style={{ width: props.colWidths[c] ?? 160 }}/>)}<col style={{ width: 36 }}/></colgroup>
+      <thead><tr><th className="personal-row-head" aria-label="行操作" style={{ width: headerWidth, minWidth: headerWidth, maxWidth: headerWidth }}>行<span className="personal-col-resize" title="拖动调整行号列宽度" onPointerDown={event => resizeColumn(event, ROW_HEADER_KEY, headerWidth)}/></th>{cols.map((col, ci) => <th key={col} data-field={col} style={frozenStyle(ci)} draggable onDragStart={() => { draggedCol.current = col; }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (draggedCol.current)
+        props.onReorderCols(draggedCol.current, col); draggedCol.current = null; }} onContextMenu={e => { e.preventDefault(); props.onHeaderMenu(col, e.clientX, e.clientY, e.currentTarget); }}><button onClick={e => { const header = e.currentTarget.closest("th")!; const rect = header.getBoundingClientRect(); props.onHeaderMenu(col, rect.left, rect.bottom + 4, header); }}>{columnLabel((fieldIndices.get(col) ?? 0))} {col} ▾</button><span className="personal-col-resize" title="拖动调整列宽，双击适应内容" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); autoColumnWidth([col]); }} onPointerDown={event => resizeColumn(event, col, props.colWidths[col] ?? 160)}/></th>)}<th><button onClick={props.onAddField} title="新增字段">＋</button></th></tr></thead>
       <tbody>{sourceRows.map((row, sourceIndex) => {
             const ri = rowIndices.get(row.id) ?? -1;
             const parent = meta.parents?.[row.id];
@@ -513,14 +619,14 @@ export function WorkbookGrid(props: Props) {
             const previous = sourceIndex > 0 && !pinnedIds.has(sourceRows[sourceIndex - 1].id) && props.groupField ? text(sourceRows[sourceIndex - 1].values[props.groupField]) || '未分组' : undefined;
             const groupCollapsed = group !== undefined && collapsedGroups.includes(group);
             return <FragmentRow key={row.id} group={group !== previous ? group : undefined} collapsed={!!groupCollapsed} columns={cols.length + 2} onToggle={() => run('折叠分组', d => { const m = gridMeta(d); (m.collapsedGroupsByView ??= {})[viewId] = collapsedGroups.includes(group!) ? collapsedGroups.filter(g => g !== group) : [...collapsedGroups, group!]; })}>
-          {!groupCollapsed && <tr data-record-id={row.id} data-frozen={frozenTops.has(row.id) || undefined} className={(row as Row & { contextOnly?: boolean }).contextOnly ? 'personal-context-row' : undefined} title={(row as Row & { contextOnly?: boolean }).contextOnly ? '筛选结果的祖先上下文行' : undefined} style={{ height: heights[row.id] ?? defaultHeight, '--bt-row-h': `${heights[row.id] ?? defaultHeight}px` } as CSSProperties} draggable={props.canReorder} onDragStart={e => { if ((e.target as HTMLElement).closest('input,textarea')) {
+          {!groupCollapsed && <tr data-record-id={row.id} data-frozen={frozenTops.has(row.id) || undefined} className={(row as Row & { contextOnly?: boolean }).contextOnly ? 'personal-context-row' : undefined} title={(row as Row & { contextOnly?: boolean }).contextOnly ? '筛选结果的祖先上下文行' : undefined} style={{ height: heights[row.id] ?? defaultHeight, '--bt-row-h': `${heights[row.id] ?? defaultHeight}px` } as CSSProperties} onDragStart={e => { const target = e.target as HTMLElement; if (!props.canReorder || !target.closest('.personal-row-head') || target.closest('input,textarea,button,.personal-row-resize')) {
                     e.preventDefault();
                     return;
-                } draggedRow.current = row.id; }} onDragOver={e => { if (draggedRow.current)
-                    e.preventDefault(); }} onDrop={e => { e.preventDefault(); if (draggedRow.current)
-                    run('移动行', d => moveSubtree(d, draggedRow.current!, row.id)); draggedRow.current = null; }}>
-            <th className="personal-row-head" style={{ ...frozenRowStyle(row.id), zIndex: frozenTops.has(row.id) ? 6 : 3 }} onClick={event => { setSelection(old => ({ start: event.shiftKey && old ? { row: old.start.row, col: 0 } : { row: ri, col: 0 }, end: { row: ri, col: cols.length - 1 } })); root.current?.focus(); }} onContextMenu={event => { event.preventDefault(); if (!ids.includes(row.id))
-                    setSelection({ start: { row: ri, col: 0 }, end: { row: ri, col: cols.length - 1 } }); openMenu(row.id, event.currentTarget, event.clientX, event.clientY); }}><span style={{ paddingLeft: Math.min(depth, 2) * 4 }}>{children ? <button title="折叠子行" onClick={event => { event.stopPropagation(); run('折叠子行', d => { const m = gridMeta(d); (m.collapsedByView ??= {})[viewId] = collapsedRows.includes(row.id) ? collapsedRows.filter(id => id !== row.id) : [...collapsedRows, row.id]; }); }}>{collapsedRows.includes(row.id) ? '▸' : '▾'}</button> : null}{config.showRowNumbers ? (recordIndices.get(row.id) ?? ri) + 1 : '•'}</span><button title="行详情" onClick={e => { e.stopPropagation(); props.onDetail(row.id); }}>↗</button><span className="personal-row-resize" title="拖动调整行高，双击适应内容" onClick={event => event.stopPropagation()} onMouseDown={event => resizeRow(event, row.id)} onDoubleClick={event => { event.stopPropagation(); autoRowHeight([row]); }}/></th>
+                } selecting.current = false; draggedRow.current = row.id; }} onDragEnd={() => { draggedRow.current = null; }} onDragOver={e => { if (draggedRow.current)
+                    e.preventDefault(); }} onDrop={e => { e.preventDefault(); const source = draggedRow.current; if (source)
+                    run('移动行', d => moveSubtree(d, source, row.id)); draggedRow.current = null; }}>
+            <th className="personal-row-head" draggable={props.canReorder} title={props.canReorder ? '拖动行号调整行顺序' : undefined} style={{ ...frozenRowStyle(row.id), zIndex: frozenTops.has(row.id) ? 6 : 3 }} onClick={event => { setSelection(old => ({ start: event.shiftKey && old ? { row: old.start.row, col: 0 } : { row: ri, col: 0 }, end: { row: ri, col: cols.length - 1 } })); root.current?.focus(); }} onContextMenu={event => { event.preventDefault(); if (!ids.includes(row.id))
+                    setSelection({ start: { row: ri, col: 0 }, end: { row: ri, col: cols.length - 1 } }); openMenu(row.id, event.currentTarget, event.clientX, event.clientY); }}><span style={{ paddingLeft: Math.min(depth, 2) * 4 }}>{children ? <button title="折叠子行" onClick={event => { event.stopPropagation(); run('折叠子行', d => { const m = gridMeta(d); (m.collapsedByView ??= {})[viewId] = collapsedRows.includes(row.id) ? collapsedRows.filter(id => id !== row.id) : [...collapsedRows, row.id]; }); }}>{collapsedRows.includes(row.id) ? '▸' : '▾'}</button> : null}{config.showRowNumbers ? (recordIndices.get(row.id) ?? ri) + 1 : '•'}</span><button title="行详情" onClick={e => { e.stopPropagation(); props.onDetail(row.id); }}>↗</button><span className="personal-row-resize" title="拖动调整行高，双击适应内容" onClick={event => event.stopPropagation()} onPointerDown={event => resizeRow(event, row.id)} onDoubleClick={event => { event.stopPropagation(); autoRowHeight([row]); }}/></th>
             {cols.map((field, ci) => {
                         const merge = meta.merges?.find(m => m.rowIds.includes(row.id) && m.fields.includes(field));
                         const intact = merge && merge.rowIds.every(id => frozenTops.has(id) === frozenTops.has(row.id)) && merge.rowIds.every((id, i) => (rowIndices.get(id) ?? -1) === (rowIndices.get(merge.rowIds[0]) ?? -1) + i) && merge.fields.every((f, i) => cols.indexOf(f) === cols.indexOf(merge.fields[0]) + i) && (!props.groupField || merge.rowIds.every(id => text(visibleRowMap.get(id)?.values[props.groupField!]) === text(row.values[props.groupField!])));
@@ -528,11 +634,11 @@ export function WorkbookGrid(props: Props) {
                             return null;
                         const value = intact ? merge.display : rawRecords.get(row.id)?.[field];
                         const displayValue = intact ? isFormula(merge.display) ? mergedFormulaRecords.get(row.id)?.[field] : merge.display : calculatedRecords.get(row.id)?.[field];
-                        return <td key={field} data-row-index={ri} data-col-index={ci} data-row-id={row.id} data-field={field} rowSpan={intact ? merge.rowIds.length : undefined} colSpan={intact ? merge.fields.length : undefined} title={merge && !intact ? '部分合并区域，当前显示原值' : `${columnLabel((fieldIndices.get(field) ?? 0))}${(recordIndices.get(row.id) ?? ri) + 1}`} className={`${isSelected(ri, ci) ? 'personal-selected' : ''} ${merge ? 'personal-merged' : ''} ${duplicateIds.has(row.id) && extras.duplicateFields?.includes(field) ? 'personal-duplicate' : ''}`} style={{ ...frozenStyle(ci), ...frozenRowStyle(row.id), ...(frozenTops.has(row.id) && ci < renderedFrozenCount ? { zIndex: 5 } : {}), ...cellStyleCss(cellStyle(sheet, row.id, field)), textAlign: cellStyle(sheet, row.id, field).align ?? sheet.fields[field].align ?? (sheet.fields[field].type === 'number' ? 'right' : 'left'), ...conditionalStyle(sheet, row, field) }} onMouseDown={event => { if (event.button !== 0)
+                        return <td key={field} data-row-index={ri} data-col-index={ci} data-row-id={row.id} data-field={field} rowSpan={intact ? merge.rowIds.length : undefined} colSpan={intact ? merge.fields.length : undefined} title={merge && !intact ? '部分合并区域，当前显示原值' : `${columnLabel((fieldIndices.get(field) ?? 0))}${(recordIndices.get(row.id) ?? ri) + 1}`} className={`${isSelected(ri, ci) ? 'personal-selected' : ''} ${merge ? 'personal-merged' : ''} ${duplicateIds.has(row.id) && extras.duplicateFields?.includes(field) ? 'personal-duplicate' : ''}`} style={{ ...frozenStyle(ci), ...frozenRowStyle(row.id), ...(frozenTops.has(row.id) && ci < renderedFrozenCount ? { zIndex: 5 } : {}), ...cellStyleCss(cellStyle(sheet, row.id, field)), textAlign: cellStyle(sheet, row.id, field).align ?? sheet.fields[field].align ?? (sheet.fields[field].type === 'number' ? 'right' : 'left'), ...conditionalStyle(sheet, row, field) }} onPointerDownCapture={event => startTouch(event, { row: ri, col: ci }, row.id)} onMouseDown={event => { if (event.button !== 0)
                             return; choose({ row: ri, col: ci }, event.shiftKey); selecting.current = true; setMenu(null); if (!(event.target as HTMLElement).closest('input,textarea,button,a'))
                             (event.currentTarget.querySelector<HTMLElement>('.spreadsheet-cell') ?? root.current)?.focus(); }} onMouseEnter={() => { if (selecting.current)
-                            setSelection(old => old ? { ...old, end: { row: ri, col: ci } } : old); }} onMouseUp={() => { if (dragFill.current)
-                            applyDragFill(ri); selecting.current = false; }} onContextMenu={event => { event.preventDefault(); if (!isSelected(ri, ci))
+                            setSelection(old => old && (old.end.row !== ri || old.end.col !== ci) ? { ...old, end: { row: ri, col: ci } } : old); }} onMouseUp={() => { if (dragFill.current)
+                            applyDragFill(ri); selecting.current = false; }} onContextMenu={event => { event.preventDefault(); if (Date.now() - lastTouch.current < 800) return; if (!isSelected(ri, ci))
                             choose({ row: ri, col: ci }); openMenu(row.id, event.currentTarget, event.clientX, event.clientY); }}>
                 <Cell spreadsheet onNavigate={direction => navigate(ri, ci, direction)} def={intact ? { type: 'longtext' } : sheet.fields[field]} value={value} displayValue={displayValue} colorful={config.colorfulTags} onCommit={next => run('编辑单元格', d => { if (intact) {
                             const m = gridMeta(d).merges?.find(m => m.id === merge.id);
