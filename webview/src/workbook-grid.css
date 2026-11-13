@@ -3,3 +3,24 @@
 .personal-context-row>.personal-row-head{font-style:italic;box-shadow:inset 3px 0 0 var(--interactive-accent,var(--vscode-focusBorder,#6b9fff))}
 
 .personal-column-group{display:inline-flex;align-items:center;border:1px solid var(--background-modifier-border,#555);border-radius:5px}.personal-column-group button{margin:0;border:0;background:transparent}.personal-grid-table td .cellbox input[type=text],.personal-grid-table td .cellbox input[type=number],.personal-grid-table td .cellbox input[type=date]{text-align:inherit}.personal-grid-table td .cellbox{justify-content:inherit}
+
+.personal-grid-table .personal-row-head {
+  width: var(--personal-rownum-width, 56px);
+  min-width: var(--personal-rownum-width, 56px);
+  max-width: var(--personal-rownum-width, 56px);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.personal-row-head > button[title="行详情"] {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  background: var(--background-secondary, var(--vscode-editor-background));
+}
+.personal-row-head:hover > button[title="行详情"],
+.personal-row-head:focus-within > button[title="行详情"] { opacity: 1; }
+@media (hover: none) {
+  .personal-row-head > button[title="行详情"] { opacity: 1; }
+}

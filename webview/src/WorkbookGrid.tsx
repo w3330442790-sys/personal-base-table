@@ -3,7 +3,9 @@ import type { BaseDoc, Row } from '../../src/core/types';
 import { applyPaste, assignParent, conditionalStyle, deleteRows, descendants, fillCells, gridMeta, insertRows, leafSummary, mergeCells, moveSubtree, parseTSV, planPaste, readGridMeta, unmergeCells, selectionClipboard, groupRows, createColumnGroup, visibleGroupColumns, type PastePlan } from '../../src/core/features';
 import { Cell } from './Cell';
 import type { UIConfig } from './config';
-import './workbook-grid.css';
+import { FloatingPanel } from './FloatingPanel';
+import { belowAnchor, pointerAnchor, type FloatingAnchor } from './floating';
+import { gridWidth, rowHeaderWidth, ROW_HEADER_KEY } from './grid-layout';
 interface Props {
     sheet: BaseDoc;
     rows: Row[];
@@ -15,7 +17,7 @@ interface Props {
     groupField?: string;
     canReorder?: boolean;
     transact: (label: string, change: (sheet: BaseDoc) => void, destructive?: boolean) => void;
-    onHeaderMenu: (col: string, x: number, y: number) => void;
+    onHeaderMenu: (col: string, x: number, y: number, element?: HTMLElement) => void;
     onResize: (col: string, width: number) => void;
     onReorderCols: (from: string, to: string) => void;
     onAddField: () => void;
@@ -76,11 +78,13 @@ export function WorkbookGrid(props: Props) {
     const draggedCol = useRef<string | null>(null);
     const [selection, setSelection] = useState<Selection | null>(null);
     const [menu, setMenu] = useState<{
-        x: number;
-        y: number;
+        anchor: FloatingAnchor;
         id: string;
     } | null>(null);
     const [dialog, setDialog] = useState<Dialog>(null);
+    const lastAnchor = useRef<FloatingAnchor | null>(null);
+    const resizeCleanup = useRef<() => void>(() => {});
+    const headerWidth = rowHeaderWidth(props.colWidths);
     const [count, setCount] = useState(1);
     const [side, setSide] = useState<'above' | 'below'>('below');
     const [join, setJoin] = useState(false);
@@ -107,7 +111,7 @@ export function WorkbookGrid(props: Props) {
     useEffect(() => {
         const up = () => { selecting.current = false; dragFill.current = null; };
         window.addEventListener('mouseup', up);
-        return () => window.removeEventListener('mouseup', up);
+        return () => { window.removeEventListener('mouseup', up); resizeCleanup.current(); };
     }, []);
     useEffect(() => { setSelection(null); setMenu(null); setDialog(null); }, [cols.join('\0'), viewId]);
     const run = (label: string, change: (sheet: BaseDoc) => void, destructive = false) => {
@@ -121,7 +125,32 @@ export function WorkbookGrid(props: Props) {
             setError((err as Error).message);
         }
     };
-    const show = (next: Dialog) => { setError(''); setMenu(null); setDialog(next); };
+    const show = (next: Dialog, element?: HTMLElement) => {
+        if (element) lastAnchor.current = belowAnchor(element);
+        else if (menu) lastAnchor.current = menu.anchor;
+        lastAnchor.current ??= belowAnchor(root.current!);
+        setError(''); setMenu(null); setDialog(next);
+    };
+    const openMenu = (id: string, element: HTMLElement, x: number, y: number) => {
+        const anchor = pointerAnchor(element, x, y);
+        lastAnchor.current = anchor;
+        setMenu({ id, anchor });
+    };
+    const resizeColumn = (event: React.MouseEvent<HTMLElement>, col: string, width: number) => {
+        event.preventDefault();
+        event.stopPropagation();
+        resizeCleanup.current();
+        const target = event.currentTarget.parentElement!;
+        const start = event.clientX;
+        const owner = target.ownerDocument.defaultView!;
+        const nextWidth = (x: number) => col === ROW_HEADER_KEY ? Math.max(44, Math.min(160, width + x - start)) : Math.max(70, width + x - start);
+        const move = (mouse: MouseEvent) => { target.style.width = `${nextWidth(mouse.clientX)}px`; };
+        const cleanup = () => { owner.removeEventListener('mousemove', move); owner.removeEventListener('mouseup', up); };
+        const up = (mouse: MouseEvent) => { cleanup(); props.onResize(col, nextWidth(mouse.clientX)); };
+        resizeCleanup.current = cleanup;
+        owner.addEventListener('mousemove', move);
+        owner.addEventListener('mouseup', up);
+    };
     const choose = (point: Point, extend = false) => { setSelection(old => ({ start: extend && old ? old.start : point, end: point })); };
     const isSelected = (row: number, col: number) => !!selection && row >= Math.min(selection.start.row, selection.end.row) && row <= Math.max(selection.start.row, selection.end.row) && col >= Math.min(selection.start.col, selection.end.col) && col <= Math.max(selection.start.col, selection.end.col);
     const copyData = () => selectionClipboard(sheet, selectedRows, selectedCols);
@@ -149,7 +178,7 @@ export function WorkbookGrid(props: Props) {
         }
     }
     const openPaste = (plain = '', html = '') => { setPasteText(plain); setPasteMatrix(htmlMatrix(html) ?? null); setExpand(false); show('paste'); };
-    const frozenStyle = (index: number): CSSProperties => index < (props.frozen ?? 0) ? { position: 'sticky', left: 76 + cols.slice(0, index).reduce((sum, col) => sum + (props.colWidths[col] ?? 160), 0), zIndex: 2, background: 'var(--background-primary, var(--vscode-editor-background))' } : {};
+    const frozenStyle = (index: number): CSSProperties => index < (props.frozen ?? 0) ? { position: 'sticky', left: headerWidth + cols.slice(0, index).reduce((sum, col) => sum + (props.colWidths[col] ?? 160), 0), zIndex: 2, background: 'var(--background-primary, var(--vscode-editor-background))' } : {};
     const applyDragFill = (targetRow: number) => {
         const source = dragFill.current;
         if (!source || targetRow <= Math.max(source.start.row, source.end.row))
@@ -170,7 +199,7 @@ export function WorkbookGrid(props: Props) {
         run(sequence ? '序列填充' : '拖动填充', d => applyPaste(d, planPaste(d, rows.map(r => r.id), cols, last + 1, firstCol, matrix)));
         setSelection({ start: source.start, end: { row: targetRow, col: lastCol } });
     };
-    return <div className="personal-grid" ref={root} tabIndex={0} onKeyDown={event => {
+    return <div className="personal-grid" style={{ "--personal-rownum-width": `${headerWidth}px` } as CSSProperties} ref={root} tabIndex={0} onKeyDown={event => {
             if ((event.target as HTMLElement).matches('input,textarea,select,[contenteditable=true]'))
                 return;
             if (event.key === 'Escape') {
@@ -197,12 +226,11 @@ export function WorkbookGrid(props: Props) {
         return; if (!selection)
         return; const data = copyData(); event.preventDefault(); event.clipboardData.setData('text/plain', data.plain); event.clipboardData.setData('text/html', data.html); }} onPaste={event => { if ((event.target as HTMLElement).matches('input,textarea'))
         return; event.preventDefault(); openPaste(event.clipboardData.getData('text/plain'), event.clipboardData.getData('text/html')); }}>
-    <div className="personal-grid-tools"><span>{ids.length} 行 × {selectedCols.length} 列</span><button onClick={() => show('paste')}>粘贴预览</button><button onClick={() => show('summary')}>父节点汇总</button><label><input type="checkbox" checked={sequence} onChange={e => setSequence(e.target.checked)}/>序列填充</label>{columnGroups.map(group => <span className="personal-column-group" key={group.id}><button title={group.fields.join('、')} onClick={() => run('折叠列组', d => {const target = gridMeta(d).columnGroupsByView?.[viewId]?.find(item => item.id === group.id);if (target) target.collapsed = !target.collapsed;})}>{group.collapsed ? '▸' : '▾'} {group.name}</button><button title="移除列组" onClick={() => run('移除列组', d => {const m=gridMeta(d); if(m.columnGroupsByView) m.columnGroupsByView[viewId] = (m.columnGroupsByView[viewId] ?? []).filter(item => item.id !== group.id);})}>×</button></span>)}<span className="personal-grid-hint">拖选单元格 · Shift 扩选 · 右键操作 · 右下角拖动填充</span></div>
+    <div className="personal-grid-tools"><span>{ids.length} 行 × {selectedCols.length} 列</span><button onClick={event => show('paste', event.currentTarget)}>粘贴预览</button><button onClick={event => show('summary', event.currentTarget)}>父节点汇总</button><label><input type="checkbox" checked={sequence} onChange={e => setSequence(e.target.checked)}/>序列填充</label>{columnGroups.map(group => <span className="personal-column-group" key={group.id}><button title={group.fields.join('、')} onClick={() => run('折叠列组', d => {const target = gridMeta(d).columnGroupsByView?.[viewId]?.find(item => item.id === group.id);if (target) target.collapsed = !target.collapsed;})}>{group.collapsed ? '▸' : '▾'} {group.name}</button><button title="移除列组" onClick={() => run('移除列组', d => {const m=gridMeta(d); if(m.columnGroupsByView) m.columnGroupsByView[viewId] = (m.columnGroupsByView[viewId] ?? []).filter(item => item.id !== group.id);})}>×</button></span>)}<span className="personal-grid-hint">拖选单元格 · Shift 扩选 · 右键操作 · 右下角拖动填充</span></div>
     {error && <div role="alert" className="personal-grid-error">{error}<button onClick={() => setError('')}>关闭</button></div>}
-    <div className="personal-grid-scroll"><table className={`personal-grid-table ${config.wrapText ? 'wrap' : ''}`} style={{ fontSize: config.fontSize || undefined }}><colgroup><col style={{ width: 76 }}/>{cols.map(c => <col key={c} style={{ width: props.colWidths[c] ?? 160 }}/>)}<col style={{ width: 36 }}/></colgroup>
-      <thead><tr><th aria-label="行操作">行</th>{cols.map((col, ci) => <th key={col} style={frozenStyle(ci)} draggable onDragStart={() => { draggedCol.current = col; }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (draggedCol.current)
-        props.onReorderCols(draggedCol.current, col); draggedCol.current = null; }} onContextMenu={e => { e.preventDefault(); props.onHeaderMenu(col, e.clientX, e.clientY); }}><button onClick={e => props.onHeaderMenu(col, e.clientX, e.clientY)}>{col} ▾</button><span className="personal-col-resize" onMouseDown={event => { event.preventDefault(); const start = event.clientX, width = props.colWidths[col] ?? 160; const move = (e: MouseEvent) => { const th = (event.target as HTMLElement).parentElement; if (th)
-        th.style.width = `${Math.max(70, width + e.clientX - start)}px`; }; const up = (e: MouseEvent) => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); props.onResize(col, Math.max(70, width + e.clientX - start)); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }}/></th>)}<th><button onClick={props.onAddField} title="新增字段">＋</button></th></tr></thead>
+    <div className="personal-grid-scroll"><table className={`personal-grid-table ${config.wrapText ? 'wrap' : ''}`} style={{ fontSize: config.fontSize || undefined, width: gridWidth(cols, props.colWidths), minWidth: gridWidth(cols, props.colWidths) }}><colgroup><col style={{ width: headerWidth }}/>{cols.map(c => <col key={c} style={{ width: props.colWidths[c] ?? 160 }}/>)}<col style={{ width: 36 }}/></colgroup>
+      <thead><tr><th className="personal-row-head" aria-label="行操作" style={{ width: headerWidth, minWidth: headerWidth, maxWidth: headerWidth }}>行<span className="personal-col-resize" title="拖动调整行号列宽度" onMouseDown={event => resizeColumn(event, ROW_HEADER_KEY, headerWidth)}/></th>{cols.map((col, ci) => <th key={col} data-field={col} style={frozenStyle(ci)} draggable onDragStart={() => { draggedCol.current = col; }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (draggedCol.current)
+        props.onReorderCols(draggedCol.current, col); draggedCol.current = null; }} onContextMenu={e => { e.preventDefault(); props.onHeaderMenu(col, e.clientX, e.clientY, e.currentTarget); }}><button onClick={e => { const header = e.currentTarget.closest("th")!; const rect = header.getBoundingClientRect(); props.onHeaderMenu(col, rect.left, rect.bottom + 4, header); }}>{col} ▾</button><span className="personal-col-resize" onMouseDown={event => resizeColumn(event, col, props.colWidths[col] ?? 160)}/></th>)}<th><button onClick={props.onAddField} title="新增字段">＋</button></th></tr></thead>
       <tbody>{sourceRows.map((row, sourceIndex) => {
             const ri = rows.findIndex(visible => visible.id === row.id);
             const parent = meta.parents?.[row.id];
@@ -226,7 +254,7 @@ export function WorkbookGrid(props: Props) {
                     e.preventDefault(); }} onDrop={e => { e.preventDefault(); if (draggedRow.current)
                     run('移动行', d => moveSubtree(d, draggedRow.current!, row.id)); draggedRow.current = null; }}>
             <th className="personal-row-head" onClick={event => { setSelection(old => ({ start: event.shiftKey && old ? { row: old.start.row, col: 0 } : { row: ri, col: 0 }, end: { row: ri, col: cols.length - 1 } })); root.current?.focus(); }} onContextMenu={event => { event.preventDefault(); if (!ids.includes(row.id))
-                    setSelection({ start: { row: ri, col: 0 }, end: { row: ri, col: cols.length - 1 } }); setMenu({ x: event.clientX, y: event.clientY, id: row.id }); }}><span style={{ paddingLeft: depth * 10 }}>{children ? <button title="折叠子行" onClick={event => { event.stopPropagation(); run('折叠子行', d => { const m = gridMeta(d); (m.collapsedByView ??= {})[viewId] = collapsedRows.includes(row.id) ? collapsedRows.filter(id => id !== row.id) : [...collapsedRows, row.id]; }); }}>{collapsedRows.includes(row.id) ? '▸' : '▾'}</button> : null}{config.showRowNumbers ? ri + 1 : '•'}</span><button title="行详情" onClick={e => { e.stopPropagation(); props.onDetail(row.id); }}>↗</button></th>
+                    setSelection({ start: { row: ri, col: 0 }, end: { row: ri, col: cols.length - 1 } }); openMenu(row.id, event.currentTarget, event.clientX, event.clientY); }}><span style={{ paddingLeft: Math.min(depth, 2) * 4 }}>{children ? <button title="折叠子行" onClick={event => { event.stopPropagation(); run('折叠子行', d => { const m = gridMeta(d); (m.collapsedByView ??= {})[viewId] = collapsedRows.includes(row.id) ? collapsedRows.filter(id => id !== row.id) : [...collapsedRows, row.id]; }); }}>{collapsedRows.includes(row.id) ? '▸' : '▾'}</button> : null}{config.showRowNumbers ? ri + 1 : '•'}</span><button title="行详情" onClick={e => { e.stopPropagation(); props.onDetail(row.id); }}>↗</button></th>
             {cols.map((field, ci) => {
                         const merge = meta.merges?.find(m => m.rowIds.includes(row.id) && m.fields.includes(field));
                         const intact = merge && merge.rowIds.every((id, i) => rows.findIndex(r => r.id === id) === rows.findIndex(r => r.id === merge.rowIds[0]) + i) && merge.fields.every((f, i) => cols.indexOf(f) === cols.indexOf(merge.fields[0]) + i) && (!props.groupField || merge.rowIds.every(id => text(rows.find(r => r.id === id)?.values[props.groupField!]) === text(row.values[props.groupField!])));
@@ -238,7 +266,7 @@ export function WorkbookGrid(props: Props) {
                             root.current?.focus(); }} onMouseEnter={() => { if (selecting.current)
                             setSelection(old => old ? { ...old, end: { row: ri, col: ci } } : old); }} onMouseUp={() => { if (dragFill.current)
                             applyDragFill(ri); selecting.current = false; }} onContextMenu={event => { event.preventDefault(); if (!isSelected(ri, ci))
-                            choose({ row: ri, col: ci }); setMenu({ x: event.clientX, y: event.clientY, id: row.id }); }}>
+                            choose({ row: ri, col: ci }); openMenu(row.id, event.currentTarget, event.clientX, event.clientY); }}>
                 <Cell def={intact ? { type: 'longtext' } : sheet.fields[field]} value={value} colorful={config.colorfulTags} onCommit={next => run('编辑单元格', d => { if (intact) {
                             const m = gridMeta(d).merges?.find(m => m.id === merge.id);
                             if (m)
@@ -255,12 +283,12 @@ export function WorkbookGrid(props: Props) {
                     })}<td /></tr>}
         </FragmentRow>;
         })}</tbody></table>{!sourceRows.length && <div className="personal-grid-empty">暂无记录<button onClick={() => run('新增行', d => { insertRows(d, undefined, 'below'); })}>新增行</button></div>}</div>
-    {menu && <><div className="personal-menu-dismiss" onMouseDown={() => setMenu(null)}/><div role="menu" className="personal-context" style={{ left: Math.min(menu.x, window.innerWidth - 240), top: Math.min(menu.y, window.innerHeight - 540) }}>
+    {menu && <FloatingPanel anchor={menu.anchor} role="menu" className="personal-context" onDismiss={() => setMenu(null)}>
       <button onClick={() => { props.onDetail(active); setMenu(null); }}>打开行详情</button><button onClick={() => { setSide('above'); show('insert'); }}>上方插入行</button><button onClick={() => { setSide('below'); show('insert'); }}>下方插入行 / 多行</button><button onClick={() => run('复制行', d => { for (const id of ids)
             insertRows(d, id, 'below', 1, true); })}>复制选中行</button><button onClick={() => { setParentMode(ids.length > 1 ? 'selected' : 'following'); show('parent'); }}>设置为父节点</button><button onClick={() => run('取消父节点归属', d => assignParent(d, undefined, ids))}>提升选中行到顶级</button>
       <hr /><button onClick={() => show('merge')}>合并区域 / 取消合并</button><button onClick={() => void copy()}>复制区域</button><button onClick={() => openPaste()}>粘贴预览</button><button onClick={() => show('fill')}>填充区域</button><button onClick={() => run('清空区域', d => fillCells(d, ids, selectedCols, null))}>清空区域</button>{props.onMoveToSheet && <button onClick={() => { props.onMoveToSheet?.(ids); setMenu(null); }}>移动到其他工作表</button>}<hr /><button onClick={() => show('delete')}>删除选中行</button>
-    </div></>}
-    {dialog && <div className="personal-dialog-overlay"><section role="dialog" aria-modal="true" className="personal-dialog" aria-label="表格操作"><h3>{{ insert: '插入行', parent: '父子行设置', merge: '合并单元格', paste: '粘贴预览', fill: '填充区域', summary: '父节点汇总', delete: '删除行', columnGroup: '创建列组' }[dialog]}</h3>
+    </FloatingPanel>}
+    {dialog && <FloatingPanel anchor={lastAnchor.current ?? belowAnchor(root.current!)} className="personal-dialog" onDismiss={() => setDialog(null)}><h3>{{ insert: '插入行', parent: '父子行设置', merge: '合并单元格', paste: '粘贴预览', fill: '填充区域', summary: '父节点汇总', delete: '删除行', columnGroup: '创建列组' }[dialog]}</h3>
       {dialog === 'columnGroup' && <><label>列组名称<input value={groupName} onChange={event => setGroupName(event.target.value)} /></label><p>选中 {selectedCols.join('、')}。折叠后保留组内首个可见列。</p><button onClick={() => run('创建列组', d => createColumnGroup(d, viewId, groupName, selectedCols))}>创建</button></>}{dialog === 'insert' && <><label>插入位置<select value={side} onChange={e => setSide(e.target.value as 'above' | 'below')}><option value="above">上方</option><option value="below">下方</option></select></label><label>行数<input type="number" min={1} max={10000} value={count} onChange={e => setCount(Number(e.target.value))}/></label><p>排序视图按排序规则展示插入后的行。同级父节点归属自动继承。</p><button onClick={() => run('插入行', d => { insertRows(d, active, side, count); })}>插入</button></>}
       {dialog === 'parent' && <><p>以当前行作为父节点，归属使用稳定行 ID。</p><select value={parentMode} onChange={e => setParentMode(e.target.value as 'following' | 'selected')}><option value="selected">使用选中行作为子节点</option><option value="following">使用随后 N 行作为子节点</option></select>{parentMode === 'following' && <input type="number" min={1} value={count} onChange={e => setCount(Number(e.target.value))}/>}<button onClick={() => run('设置父子节点', d => { if (parentMode === 'following' && (!Number.isInteger(count) || count < 1))
             throw new Error('请输入有效行数'); const at = rows.findIndex(r => r.id === active); const children = parentMode === 'selected' ? ids.filter(id => id !== active) : rows.slice(at + 1, at + 1 + count).map(r => r.id); if (!children.length)
@@ -278,7 +306,7 @@ export function WorkbookGrid(props: Props) {
       {dialog === 'summary' && <><label>完成状态字段<select value={completion} onChange={e => setCompletion(e.target.value)}><option value="">不显示完成进度</option>{cols.map(f => <option key={f}>{f}</option>)}</select></label><label>数字字段<select value={number} onChange={e => setNumber(e.target.value)}><option value="">不显示数字汇总</option>{cols.filter(f => sheet.fields[f].type === 'number').map(f => <option key={f}>{f}</option>)}</select></label><label>统计方式<select value={operation} onChange={e => setOperation(e.target.value as typeof operation)}><option value="sum">求和</option><option value="average">平均</option><option value="min">最小</option><option value="max">最大</option></select></label><p>统计全部后代叶子行。完成值支持勾选或「已完成」「完成」「Done」。</p><button onClick={() => run('设置父节点汇总', d => { gridMeta(d).summary = { completionField: completion || undefined, numberField: number || undefined, operation }; })}>保存设置</button></>}
       {dialog === 'delete' && <><p>将删除选中的 {ids.length} 行。父节点包含的子行可提升或一起删除。</p><button onClick={() => run('删除行并提升子行', d => deleteRows(d, ids, false), true)}>删除并提升子行</button><button onClick={() => run('删除子树', d => deleteRows(d, ids, true), true)}>连同全部子行删除</button><p>额外子行数 {new Set(ids.flatMap(id => descendants(sheet, id)).filter(id => !ids.includes(id))).size}</p></>}
       {error && <p role="alert" className="personal-grid-error">{error}</p>}<footer><button onClick={() => { setDialog(null); setError(''); }}>关闭</button></footer>
-    </section></div>}
+    </FloatingPanel>}
   </div>;
 }
 function FragmentRow({ group, collapsed, columns, onToggle, children }: {

@@ -15,6 +15,7 @@ import { Caret, Icon } from "./icons";
 import { defaultConfig, ROW_HEIGHT_PX, type UIConfig } from "./config";
 import { getSheet } from "../../src/core/workbook";
 import { readGridMeta } from "../../src/core/features";
+import { belowAnchor, pointerAnchor, type FloatingAnchor } from "./floating";
 
 type Panel = "filter" | "sort" | "group" | "fields" | null;
 
@@ -26,14 +27,15 @@ export interface TableRenderProps {
   groupField?: string;
   frozen: number;
   canReorder: boolean;
-  onHeaderMenu: (col: string, x: number, y: number) => void;
+  onHeaderMenu: (col: string, x: number, y: number, element?: HTMLElement) => void;
   onResize: (col: string, width: number) => void;
   onReorderCols: (from: string, to: string) => void;
   onAddField: () => void;
   view: ViewDef;
 }
 
-export function App({ host = defaultHost(), managedHistory, renderTable }: {
+export function App({ host = defaultHost(), managedHistory, renderTable, worksheetMode = false }: {
+  worksheetMode?: boolean;
   host?: Host;
   managedHistory?: { undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean };
   renderTable?: (props: TableRenderProps) => ReactNode;
@@ -49,7 +51,9 @@ export function App({ host = defaultHost(), managedHistory, renderTable }: {
   const [renameText, setRenameText] = useState("");
   const dragViewRef = useRef<number | null>(null);
   const [overView, setOverView] = useState<number | null>(null);
-  const [fieldMenu, setFieldMenu] = useState<{ col: string; x: number; y: number } | null>(null);
+  const appElement = useRef<HTMLDivElement>(null);
+  const fieldAnchor = useRef<FloatingAnchor | null>(null);
+  const [fieldMenu, setFieldMenu] = useState<{ col: string; anchor: FloatingAnchor } | null>(null);
   const [fieldEditor, setFieldEditor] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   // 撤销/重做历史(整表快照栈)
@@ -315,8 +319,9 @@ export function App({ host = defaultHost(), managedHistory, renderTable }: {
     setMenuView(null);
     setFieldMenu(null);
   };
-  const openFieldMenu = (col: string, x: number, y: number) => {
-    setFieldMenu({ col, x, y });
+  const openFieldMenu = (col: string, x: number, y: number, element?: HTMLElement) => {
+    fieldAnchor.current = pointerAnchor(element ?? appElement.current!, x, y);
+    setFieldMenu({ col, anchor: fieldAnchor.current });
     setPanel(null);
     setMenuView(null);
   };
@@ -380,8 +385,8 @@ export function App({ host = defaultHost(), managedHistory, renderTable }: {
 
   return (
     <HostContext.Provider value={host}>
-    <div className="app" style={rootStyle} tabIndex={-1}>
-      <div className="views">
+    <div ref={appElement} className="app" style={rootStyle} tabIndex={-1}>
+      {!worksheetMode && <div className="views">
         {views.map((v, i) => (
           <div
             className={`view-tab${overView === i && dragViewRef.current !== null && dragViewRef.current !== i ? " view-over" : ""}`}
@@ -439,7 +444,9 @@ export function App({ host = defaultHost(), managedHistory, renderTable }: {
         <button className="view-add" title="新建视图" onMouseDown={(e) => e.stopPropagation()} onClick={newView}>
           ＋
         </button>
-      </div>
+      </div>}
+
+      {worksheetMode && views.length > 1 && <label className="saved-view-selector">已有筛选方案<select aria-label="已有筛选方案" value={idx} onChange={event => setViewIdx(Number(event.target.value))}>{views.map((saved, index) => <option key={index} value={index}>{saved.name}</option>)}</select></label>}
 
       <div className="toolbar">
         <button className="tool primary" onClick={addRow}>
@@ -458,7 +465,7 @@ export function App({ host = defaultHost(), managedHistory, renderTable }: {
               onChange={(f) => updateView({ filters: f })}
               onMatchChange={(m) => updateView({ filterMatch: m })}
               onClear={() => updateView({ filters: [], filterMatch: undefined })}
-              onSaveAsView={saveAsView}
+              onSaveAsView={worksheetMode ? undefined : saveAsView}
             />
           )}
         </div>
@@ -485,6 +492,8 @@ export function App({ host = defaultHost(), managedHistory, renderTable }: {
               hiddenCols={view.hiddenCols ?? []}
               onEdit={(c) => {
                 setPanel(null);
+                const header = Array.from(appElement.current!.querySelectorAll<HTMLElement>("th[data-field]")).find(element => element.dataset.field === c);
+                fieldAnchor.current = belowAnchor(header ?? appElement.current!);
                 setFieldEditor(c);
               }}
               onToggleHidden={(c, hidden) =>
@@ -541,13 +550,13 @@ export function App({ host = defaultHost(), managedHistory, renderTable }: {
         <FieldMenu
           def={table.fields[fieldMenu.col]}
           frozen={cols.indexOf(fieldMenu.col) < frozen}
-          x={fieldMenu.x}
-          y={fieldMenu.y}
+          anchor={fieldMenu.anchor}
+          onDismiss={() => setFieldMenu(null)}
           onAction={(a) => handleFieldAction(fieldMenu.col, a)}
         />
       )}
       {fieldEditor && (
-        <FieldEditor name={fieldEditor} def={table.fields[fieldEditor]} onSave={(newName, patch) => saveFieldEditor(fieldEditor, newName, patch)} onCancel={() => setFieldEditor(null)} />
+        <FieldEditor name={fieldEditor} def={table.fields[fieldEditor]} anchor={fieldAnchor.current ?? belowAnchor(appElement.current!)} onSave={(newName, patch) => saveFieldEditor(fieldEditor, newName, patch)} onCancel={() => setFieldEditor(null)} />
       )}
       {exportOpen && <ExportModal onExport={handleExport} onCancel={() => setExportOpen(false)} />}
     </div>

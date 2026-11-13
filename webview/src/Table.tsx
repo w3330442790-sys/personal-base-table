@@ -22,7 +22,7 @@ interface Props {
   onDelete: (id: string) => void;
   onDeleteMany: (ids: string[]) => void;
   onMoveRowTo: (id: string, targetId: string, before: boolean) => void;
-  onHeaderMenu: (col: string, x: number, y: number) => void;
+  onHeaderMenu: (col: string, x: number, y: number, element?: HTMLElement) => void;
   onResize: (col: string, width: number) => void;
   onReorderCols: (from: string, to: string) => void;
   onAddField: () => void;
@@ -492,8 +492,7 @@ export function Table({ fields, cols, rows, config, colWidths, groupField, froze
                   className="th-inner"
                   onClick={(e) => {
                     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    const o = fixedOrigin(e.currentTarget as HTMLElement);
-                    onHeaderMenu(c, r.left - o.left, r.bottom + 4 - o.top);
+                    onHeaderMenu(c, r.left, r.bottom + 4, e.currentTarget as HTMLElement);
                   }}
                 >
                   <Icon name={fields[c]?.type ?? "text"} size={16} className="fico" />

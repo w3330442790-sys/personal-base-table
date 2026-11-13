@@ -27,7 +27,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   const queue = useRef(Promise.resolve());
   const alive = useRef(true);
   const generation = useRef(0);
-  const failedDraft = useRef<{ doc: BaseDoc; owner: WorkbookSession; revision: number; label: string; sheetId: string } | null>(null);
+  const failedDraft = useRef<{ doc: BaseDoc; owner: WorkbookSession; revision: number; label: string; sheetId: string; focusSheet?: string } | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
   const [document, setDocument] = useState<BaseDoc | null>(null);
   const [active, setActive] = useState("main");
@@ -92,7 +92,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
     identityPersisted.current = (next.personal as { id?: string } | undefined)?.id === session.current?.documentId;
   }
 
-  function transactDocument(label: string, change: (doc: BaseDoc) => void, destructive = false): void {
+  function transactDocument(label: string, change: (doc: BaseDoc) => void, destructive = false, focusSheet?: () => string): void {
     if (failedDraft.current) { setError("有尚未保存的修改，请先重试保存或导出待保存副本"); return; }
     const affectedSheet = session.current!.activeSheetId;
     enqueue(async () => {
@@ -101,18 +101,20 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       const before = owner.document;
       const next = clone(before);
       change(next);
+      const nextActive = focusSheet?.();
       validateWorkbook(next);
       if (JSON.stringify(before) === JSON.stringify(next)) return;
       if (destructive) await createSnapshot(label, before);
       if (owner !== session.current) throw new Error("文件已被外部更新，请重试操作");
       try { await persist(next); }
       catch (reason) {
-        failedDraft.current = { doc: next, owner, revision: revision.current, label, sheetId: affectedSheet };
+        failedDraft.current = { doc: next, owner, revision: revision.current, label, sheetId: affectedSheet, focusSheet: nextActive };
         setHasDraft(true);
         throw reason;
       }
       if (owner !== session.current) throw new Error("文件已被外部更新，已重新载入");
       owner.transact(label, doc => replaceAll(doc, next), affectedSheet);
+      if (nextActive) owner.activeSheetId = nextActive;
       publish();
     });
   }
@@ -120,6 +122,13 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   function transact(label: string, change: (sheet: BaseDoc) => void, destructive = false): void {
     const sheetId = active;
     transactDocument(label, doc => change(getSheet(doc, sheetId)), destructive);
+  }
+
+  function createWorksheet(source?: string): void {
+    let created = "";
+    transactDocument(source ? "复制工作表" : "新建工作表", doc => {
+      created = source ? duplicateSheet(doc, source) : addSheet(doc);
+    }, false, () => created);
   }
 
   function navigateHistory(direction: "undo" | "redo"): void {
@@ -260,6 +269,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       if (draft.owner !== session.current || draft.revision !== revision.current) throw new Error("原文件已更新，请导出待保存副本以保留修改");
       await persist(draft.doc);
       draft.owner.transact(draft.label, doc => replaceAll(doc, draft.doc), draft.sheetId);
+      if (draft.focusSheet) draft.owner.activeSheetId = draft.focusSheet;
       failedDraft.current = null;
       setHasDraft(false);
       publish();
@@ -268,7 +278,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       host.post({ type: "export", defaultName: "工作簿-待保存副本.wbase", content: JSON.stringify(draft.doc, null, 2) + "\n" });
     }}>导出待保存副本</button><button onClick={() => { failedDraft.current = null; setHasDraft(false); publish(); }}>放弃待保存修改</button></div>}
     <div className={`workbook-content${busy || hasDraft ? " workbook-busy" : ""}`}>
-      <App key={active} host={sheetHost.current!} managedHistory={{ canUndo: session.current!.canUndo, canRedo: session.current!.canRedo, undo: () => navigateHistory("undo"), redo: () => navigateHistory("redo") }}
+      <App key={active} worksheetMode host={sheetHost.current!} managedHistory={{ canUndo: session.current!.canUndo, canRedo: session.current!.canRedo, undo: () => navigateHistory("undo"), redo: () => navigateHistory("redo") }}
         renderTable={props => <WorkbookGrid {...props} viewId={props.view.name} sheet={sheet} rows={deriveRows(sheet, props.view)} transact={transact}
           onDetail={id => { setDetailId(id); setPanel("details"); }}
           onSelection={(ids, cols) => { setSelectedRows(ids); setSelectedCols(cols); }}
@@ -283,9 +293,9 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       }}>
         <button role="tab" aria-selected={active === info.id} onDoubleClick={() => setRename({ id: info.id, name: info.name })} onClick={() => { session.current!.activeSheetId = info.id; setSelectedRows([]); setSelectedCols([]); publish(); }} onContextMenu={event => { event.preventDefault(); setSheetMenu(info.id); }}>{info.name}</button>
         <button aria-label={`${info.name}操作`} onClick={() => setSheetMenu(sheetMenu === info.id ? null : info.id)}>▾</button>
-        {sheetMenu === info.id && <div className="sheet-menu"><button onClick={() => { setRename({ id: info.id, name: info.name }); setSheetMenu(null); }}>重命名</button><button onClick={() => { transactDocument("复制工作表", doc => { duplicateSheet(doc, info.id); }); setSheetMenu(null); }}>复制工作表</button><button disabled={sheets.length <= 1} onClick={() => { setDeleteTarget(info.id); setSheetMenu(null); }}>删除工作表</button></div>}
+        {sheetMenu === info.id && <div className="sheet-menu"><button onClick={() => { setRename({ id: info.id, name: info.name }); setSheetMenu(null); }}>重命名</button><button onClick={() => { createWorksheet(info.id); setSheetMenu(null); }}>复制工作表</button><button disabled={sheets.length <= 1} onClick={() => { setDeleteTarget(info.id); setSheetMenu(null); }}>删除工作表</button></div>}
       </div>)}
-      <button aria-label="新建工作表" onClick={() => transactDocument("新建工作表", doc => { addSheet(doc); })}>＋</button>
+      <button aria-label="新建工作表" title="新建独立工作表" onClick={() => createWorksheet()}>＋</button>
     </div>
     {rename && <div className="workbook-dialog-backdrop"><form className="workbook-dialog" onSubmit={event => { event.preventDefault(); transactDocument("重命名工作表", doc => renameSheet(doc, rename.id, rename.name)); setRename(null); }}><h3>重命名工作表</h3><input aria-label="工作表名称" autoFocus value={rename.name} onChange={event => setRename({ ...rename, name: event.target.value })} /><button type="submit">保存</button><button type="button" onClick={() => setRename(null)}>取消</button></form></div>}
     {deleteTarget && <div className="workbook-dialog-backdrop"><div className="workbook-dialog"><h3>删除工作表</h3><p>将删除 {sheets.find(s => s.id === deleteTarget)?.name} 的 {getSheet(document, deleteTarget).records.length} 行记录。操作前会创建快照，之后可以撤销。</p><button onClick={() => { transactDocument("删除工作表", doc => removeSheet(doc, deleteTarget), true); setDeleteTarget(null); }}>删除并保留快照</button><button onClick={() => setDeleteTarget(null)}>取消</button></div></div>}

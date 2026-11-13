@@ -1,5 +1,7 @@
 import type { FieldDef } from "../../src/core/types";
 import { Icon } from "./icons";
+import { FloatingPanel } from "./FloatingPanel";
+import type { FloatingAnchor } from "./floating";
 
 export type FieldAction =
   | { kind: "edit" }
@@ -17,15 +19,15 @@ export type FieldAction =
 interface Props {
   def: FieldDef;
   frozen: boolean;
-  x: number;
-  y: number;
+  anchor: FloatingAnchor;
+  onDismiss: () => void;
   onAction: (a: FieldAction) => void;
 }
 
-export function FieldMenu({ def, frozen, x, y, onAction }: Props) {
+export function FieldMenu({ def, frozen, anchor, onDismiss, onAction }: Props) {
   const align = def.align ?? "left";
   return (
-    <div className="menu field-menu" style={{ left: x, top: y }} onMouseDown={(e) => e.stopPropagation()}>
+    <FloatingPanel className="menu field-menu" role="menu" anchor={anchor} onDismiss={onDismiss}>
       <div className="menu-item" onClick={() => onAction({ kind: "edit" })}>
         <Icon name="edit" size={14} className="menu-ico" />编辑字段
       </div>
@@ -70,6 +72,6 @@ export function FieldMenu({ def, frozen, x, y, onAction }: Props) {
       >
         <Icon name="trash" size={14} className="menu-ico" />删除字段
       </div>
-    </div>
+    </FloatingPanel>
   );
 }

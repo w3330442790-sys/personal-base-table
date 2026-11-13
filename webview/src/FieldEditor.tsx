@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { DateFormat, FieldDef, FieldType, NumberStyle } from "../../src/core/types";
 import { Icon } from "./icons";
+import { FloatingPanel } from "./FloatingPanel";
+import type { FloatingAnchor } from "./floating";
 
 const TYPES: { value: FieldType; label: string; icon: string }[] = [
   { value: "text", label: "文本", icon: "A" },
@@ -40,13 +42,14 @@ const NUMBER_STYLES: { value: NumberStyle; label: string }[] = [
 ];
 
 interface Props {
+  anchor: FloatingAnchor;
   name: string;
   def: FieldDef;
   onSave: (newName: string, patch: Partial<FieldDef>) => void;
   onCancel: () => void;
 }
 
-export function FieldEditor({ name, def, onSave, onCancel }: Props) {
+export function FieldEditor({ name, def, onSave, onCancel, anchor }: Props) {
   const [title, setTitle] = useState(name);
   const [type, setType] = useState<FieldType>(def.type);
   const [options, setOptions] = useState<string[]>(def.options ?? []);
@@ -122,8 +125,7 @@ export function FieldEditor({ name, def, onSave, onCancel }: Props) {
   };
 
   return (
-    <div className="modal-mask" onMouseDown={onCancel}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+    <FloatingPanel className="modal personal-field-editor" anchor={anchor} onDismiss={onCancel}>
         <div className="modal-title">编辑字段</div>
 
         <label className="fld-label">标题</label>
@@ -242,8 +244,7 @@ export function FieldEditor({ name, def, onSave, onCancel }: Props) {
             确定
           </button>
         </div>
-      </div>
-    </div>
+    </FloatingPanel>
   );
 }
 

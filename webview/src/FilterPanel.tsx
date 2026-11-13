@@ -10,7 +10,7 @@ interface Props {
   onChange: (filters: FilterCond[]) => void;
   onMatchChange: (m: "all" | "any") => void;
   onClear: () => void;
-  onSaveAsView: () => void;
+  onSaveAsView?: () => void;
 }
 
 export function FilterPanel({ fields, cols, filters, match, onChange, onMatchChange, onClear, onSaveAsView }: Props) {
@@ -84,9 +84,9 @@ export function FilterPanel({ fields, cols, filters, match, onChange, onMatchCha
         <button className="pop-link danger" onClick={onClear} disabled={filters.length === 0}>
           清除筛选
         </button>
-        <button className="pop-link" onClick={onSaveAsView} disabled={filters.length === 0}>
+        {onSaveAsView && <button className="pop-link" onClick={onSaveAsView} disabled={filters.length === 0}>
           另存为新视图
-        </button>
+        </button>}
       </div>
     </div>
   );
