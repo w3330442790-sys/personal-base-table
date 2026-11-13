@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import type { BaseDoc, Row } from '../../src/core/types';
+import type { BaseDoc, FieldDef, Row } from '../../src/core/types';
 import { applyPaste, assignParent, conditionalStyle, deleteRows, descendants, fillCells, gridMeta, insertRows, leafSummary, mergeCells, moveSubtree, parseTSV, planPaste, readGridMeta, unmergeCells, selectionClipboard, groupRows, createColumnGroup, visibleGroupColumns } from '../../src/core/features';
 import { columnLabel, calculatedSheet, isFormula, translateFormula } from '../../src/core/formulas';
 import { buildSelectivePaste, applySelectivePaste, makeCellClipboard, encodeCellClipboard, decodeCellClipboard, CELL_CLIPBOARD_MIME, findDuplicateRows, type CellClipboard } from '../../src/core/spreadsheet-data';
@@ -39,12 +39,13 @@ interface Props {
 interface Point {
     row: number;
     col: number;
-}
-interface Selection {
+}interface Selection {
     start: Point;
     end: Point;
 }
 type Dialog = 'insert' | 'parent' | 'merge' | 'paste' | 'fill' | 'summary' | 'delete' | 'columnGroup' | 'freeze' | null;
+/** 改名等操作提交后、宿主回推前，界面列名可能短暂领先于文档；缺定义时按文本列兜底，避免整表渲染崩溃。 */
+const FALLBACK_FIELD: FieldDef = { type: 'text' };
 const text = (value: unknown): string => Array.isArray(value) ? value.join(',') : String(value ?? '');
 function htmlMatrix(html: string): string[][] | undefined {
     if (!html)
@@ -116,6 +117,7 @@ function htmlStyles(html: string): CellStyle[][] | undefined {
 }
 export function WorkbookGrid(props: Props) {
     const { sheet, config, transact } = props;
+    const fieldDef = (field: string): FieldDef => sheet.fields[field] ?? FALLBACK_FIELD;
     const viewId = props.viewId ?? sheet.views[0]?.name ?? '全部';
     const [fallbackSequence, setFallbackSequence] = useState(false);
     const sequence = props.sequence ?? fallbackSequence;
@@ -426,7 +428,7 @@ export function WorkbookGrid(props: Props) {
     const displayText = (row: Row, field: string) => {
         const record = calculatedRecords.get(row.id);
         const value = record ? record[field] : row.values[field];
-        const def = sheet.fields[field];
+        const def = fieldDef(field);
         return def.type === 'number' ? formatNumber(value, def) : def.type === 'date' ? formatDate(value, def.dateFormat) : text(value);
     };
     const canvasContext = useRef<CanvasRenderingContext2D | null>(null);
@@ -550,7 +552,7 @@ export function WorkbookGrid(props: Props) {
             }
             if (sequence && typeof value === 'number')
                 return value + (Math.floor(i / (last - first + 1)) + 1) * (last - first + 1);
-            if (sequence && sheet.fields[field].type === 'date' && value) {
+            if (sequence && fieldDef(field).type === 'date' && value) {
                 const date = new Date(String(value));
                 date.setUTCDate(date.getUTCDate() + (Math.floor(i / (last - first + 1)) + 1) * (last - first + 1));
                 return date.toISOString().slice(0, 10);
@@ -638,13 +640,13 @@ export function WorkbookGrid(props: Props) {
                             return null;
                         const value = intact ? merge.display : rawRecords.get(row.id)?.[field];
                         const displayValue = intact ? isFormula(merge.display) ? mergedFormulaRecords.get(row.id)?.[field] : merge.display : calculatedRecords.get(row.id)?.[field];
-                        return <td key={field} data-row-index={ri} data-col-index={ci} data-row-id={row.id} data-field={field} rowSpan={intact ? merge.rowIds.length : undefined} colSpan={intact ? merge.fields.length : undefined} title={merge && !intact ? '部分合并区域，当前显示原值' : `${columnLabel((fieldIndices.get(field) ?? 0))}${(recordIndices.get(row.id) ?? ri) + 1}`} className={`${isSelected(ri, ci) ? 'personal-selected' : ''} ${merge ? 'personal-merged' : ''} ${duplicateIds.has(row.id) && extras.duplicateFields?.includes(field) ? 'personal-duplicate' : ''}`} style={{ ...frozenStyle(ci), ...frozenRowStyle(row.id), ...(frozenTops.has(row.id) && ci < renderedFrozenCount ? { zIndex: 5 } : {}), ...cellStyleCss(cellStyle(sheet, row.id, field)), textAlign: cellStyle(sheet, row.id, field).align ?? sheet.fields[field].align ?? (sheet.fields[field].type === 'number' ? 'right' : 'left'), ...conditionalStyle(sheet, row, field) }} onPointerDownCapture={event => startTouch(event, { row: ri, col: ci }, row.id)} onMouseDown={event => { if (event.button !== 0)
+                        return <td key={field} data-row-index={ri} data-col-index={ci} data-row-id={row.id} data-field={field} rowSpan={intact ? merge.rowIds.length : undefined} colSpan={intact ? merge.fields.length : undefined} title={merge && !intact ? '部分合并区域，当前显示原值' : `${columnLabel((fieldIndices.get(field) ?? 0))}${(recordIndices.get(row.id) ?? ri) + 1}`} className={`${isSelected(ri, ci) ? 'personal-selected' : ''} ${merge ? 'personal-merged' : ''} ${duplicateIds.has(row.id) && extras.duplicateFields?.includes(field) ? 'personal-duplicate' : ''}`} style={{ ...frozenStyle(ci), ...frozenRowStyle(row.id), ...(frozenTops.has(row.id) && ci < renderedFrozenCount ? { zIndex: 5 } : {}), ...cellStyleCss(cellStyle(sheet, row.id, field)), textAlign: cellStyle(sheet, row.id, field).align ?? fieldDef(field).align ?? (fieldDef(field).type === 'number' ? 'right' : 'left'), ...conditionalStyle(sheet, row, field) }} onPointerDownCapture={event => startTouch(event, { row: ri, col: ci }, row.id)} onMouseDown={event => { if (event.button !== 0)
                             return; choose({ row: ri, col: ci }, event.shiftKey); selecting.current = true; setMenu(null); if (!(event.target as HTMLElement).closest('input,textarea,button,a'))
                             (event.currentTarget.querySelector<HTMLElement>('.spreadsheet-cell') ?? root.current)?.focus(); }} onMouseEnter={() => { if (selecting.current)
                             setSelection(old => old && (old.end.row !== ri || old.end.col !== ci) ? { ...old, end: { row: ri, col: ci } } : old); }} onMouseUp={() => { if (dragFill.current)
                             applyDragFill(ri); selecting.current = false; }} onContextMenu={event => { event.preventDefault(); if (Date.now() - lastTouch.current < 800) return; if (!isSelected(ri, ci))
                             choose({ row: ri, col: ci }); openMenu(row.id, event.currentTarget, event.clientX, event.clientY); }}>
-                <Cell spreadsheet onNavigate={direction => navigate(ri, ci, direction)} def={intact ? { type: 'longtext' } : sheet.fields[field]} value={value} displayValue={displayValue} colorful={config.colorfulTags} onCommit={next => run('编辑单元格', d => { if (intact) {
+                <Cell spreadsheet onNavigate={direction => navigate(ri, ci, direction)} def={intact ? { type: 'longtext' } : fieldDef(field)} value={value} displayValue={displayValue} colorful={config.colorfulTags} onCommit={next => run('编辑单元格', d => { if (intact) {
                             const m = gridMeta(d).merges?.find(m => m.id === merge.id);
                             if (m)
                                 m.display = next;

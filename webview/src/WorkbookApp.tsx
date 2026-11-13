@@ -18,6 +18,7 @@ import { formatCells } from "../../src/core/cell-style";
 import { typedValue } from "../../src/core/features";
 import { updateCell } from "../../src/core/ops";
 import { useTabletViewport } from "./useTabletViewport";
+import { TableErrorBoundary } from "./TableErrorBoundary";
 
 type Result = Extract<InMsg, { type: "operationResult" }>;
 type FeaturePanel = "search" | "format" | "details" | "templates" | "history" | "move" | "data" | null;
@@ -309,6 +310,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       host.post({ type: "export", defaultName: "工作簿-待保存副本.wbase", content: JSON.stringify(draft.doc, null, 2) + "\n" });
     }}>导出待保存副本</button><button onClick={() => { failedDraft.current = null; setHasDraft(false); publish(); }}>放弃待保存修改</button></div>}
     <div className={`workbook-content${busy || hasDraft ? " workbook-busy" : ""}`}>
+      <TableErrorBoundary resetKey={document}>
       <App key={active} worksheetMode host={sheetHost.current!} managedHistory={{ canUndo: session.current!.canUndo, canRedo: session.current!.canRedo, undo: () => navigateHistory("undo"), redo: () => navigateHistory("redo") }}
         renderToolbar={controls => <WorkbookRibbon controls={controls} sheet={sheet} selectedRows={selectedRows} selectedCols={selectedCols} sequence={sequence} onSequence={setSequence} onCommand={issueCommand} onPanel={openPanel} onCreateSheet={() => createWorksheet()}
             onFormulaCommit={(id, field, value) => transact("编辑单元格内容与公式", candidate => {
@@ -321,6 +323,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
           onSelection={(ids, cols) => { setSelectedRows(ids); setSelectedCols(cols); }}
           onMoveToSheet={ids => { setSelectedRows(ids); setPanel("move"); }} />}
       />
+      </TableErrorBoundary>
     </div>
     <div className="sheet-tabs" role="tablist" aria-label="工作表">
       {sheets.map(info => <div className="sheet-tab-wrap" key={info.id} draggable onDragStart={() => { dragSheet.current = info.id; }} onDragOver={event => event.preventDefault()} onDrop={() => {

@@ -17,3 +17,9 @@
 .workbook-dialog { background: var(--bt-header-solid); color: inherit; border: 1px solid var(--bt-border); padding: 24px; border-radius: 10px; max-width: 520px; width: 90%; }
 .workbook-dialog input { width: 100%; padding: 8px; margin-bottom: 16px; }
 .workbook-dialog button { margin-right: 8px; }
+
+.workbook-crash { padding: 24px; max-width: 640px; }
+.workbook-crash h3 { margin: 0 0 10px; color: var(--text-error, #e46b61); }
+.workbook-crash p { margin: 0 0 8px; color: var(--bt-muted); }
+.workbook-crash pre { white-space: pre-wrap; padding: 8px 10px; border-radius: 4px; background: var(--bt-hover); font-size: 11px; overflow: auto; max-height: 160px; }
+.workbook-crash button { margin-top: 6px; padding: 5px 12px; border: 1px solid var(--bt-border); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
