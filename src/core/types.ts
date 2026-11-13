@@ -58,6 +58,7 @@ export interface GroupSpec {
 }
 
 export interface ViewDef {
+  wrapText?: boolean;
   name: string;
   /** 多条件筛选 */
   filters?: FilterCond[];

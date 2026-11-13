@@ -65,3 +65,19 @@ test("HTML clipboard and Excel export carry styles while escaping cell content",
   assert.match(excel, /font-style:italic/);
   assert.match(excel, /&lt;value&gt;/);
 });
+
+
+test("cell colors preserve values, reject unsafe colors and survive HTML export", () => {
+  const doc = fixture();
+  const before = JSON.stringify(doc.records);
+  formatCells(doc, ["r1"], ["Title"], { color: "#c12", background: "#ffee00" });
+  assert.equal(JSON.stringify(doc.records), before);
+  assert.equal(cellStyle(doc, "r1", "Title").color, "#c12");
+  assert.match(selectionClipboard(doc, sheetRows(doc), ["Title"]).html, /background-color:#ffee00/);
+  const styled = JSON.stringify(doc);
+  assert.throws(() => formatCells(doc, ["r1"], ["Title"], { color: "url(unsafe)" }));
+  assert.equal(JSON.stringify(doc), styled);
+  formatCells(doc, ["r1"], ["Title"], { color: "" });
+  assert.equal(cellStyle(doc, "r1", "Title").color, undefined);
+  assert.equal(cellStyle(doc, "r1", "Title").background, "#ffee00");
+});

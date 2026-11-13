@@ -7,6 +7,7 @@ import { useAutoClose } from "./hooks";
 import { useHost } from "./host";
 import { parseWikiLink } from "../../src/core/links";
 import { typedValue } from "../../src/core/features";
+import { isFormula } from "../../src/core/formulas";
 
 const CHECK = "✓";
 
@@ -53,6 +54,7 @@ export function CellPreview({ def, value, colorful }: { def: FieldDef; value: un
 }
 
 interface Props {
+  displayValue?: unknown;
   spreadsheet?: boolean;
   onNavigate?: (direction: "up" | "down" | "left" | "right") => void;
   def: FieldDef;
@@ -61,9 +63,9 @@ interface Props {
   onCommit: (value: unknown) => void;
 }
 
-export function Cell({ def, value, colorful, onCommit, spreadsheet = false, onNavigate }: Props) {
+export function Cell({ def, value, displayValue, colorful, onCommit, spreadsheet = false, onNavigate }: Props) {
   if (spreadsheet && def.type !== "checkbox" && def.type !== "select" && def.type !== "multi") {
-    return <SpreadsheetCell def={def} value={value} colorful={colorful} onCommit={onCommit} onNavigate={onNavigate} />;
+    return <SpreadsheetCell def={def} value={value} displayValue={displayValue} colorful={colorful} onCommit={onCommit} onNavigate={onNavigate} />;
   }
   switch (def.type) {
     case "checkbox":
@@ -96,7 +98,7 @@ export function Cell({ def, value, colorful, onCommit, spreadsheet = false, onNa
 }
 
 /** Select with one click, edit in the cell with typing, F2 or a double click. */
-function SpreadsheetCell({ def, value, colorful, onCommit, onNavigate }: Props) {
+function SpreadsheetCell({ def, value, displayValue, colorful, onCommit, onNavigate }: Props) {
   const host = useHost();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -153,7 +155,7 @@ function SpreadsheetCell({ def, value, colorful, onCommit, onNavigate }: Props) 
         : <input className="spreadsheet-input" ref={element => { input.current = element; }} value={draft} type="text" aria-label="编辑单元格" aria-invalid={!!error} title={error || "Enter 确认，Esc 取消"}
           onChange={event => { latest.current = event.target.value; setDraft(event.target.value); }} onKeyDown={editKeys} onBlur={() => finish(true, undefined, false)} />}
       {error && <span role="alert" className="spreadsheet-error">{error}</span>}
-    </> : <CellPreview def={def} value={value} colorful={colorful} />}
+    </> : <CellPreview def={isFormula(value) && typeof displayValue === 'string' && displayValue.startsWith('#') ? { type: 'text' } : def} value={isFormula(value) ? displayValue : value} colorful={colorful} />}
   </div>;
 }
 

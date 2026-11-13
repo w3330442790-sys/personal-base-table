@@ -2,6 +2,7 @@ import { genId, type BaseDoc, type FieldDef, type Row, type ViewDef } from './ty
 import { applyView } from '../../webview/src/filter';
 import type { StyleMap } from './cell-style';
 import { cellStyle, cellStyleHtml } from './cell-style';
+import { isFormula } from './formulas';
 export interface MergeRegion {
     id: string;
     rowIds: string[];
@@ -19,6 +20,9 @@ export interface FormatRule {
     background?: string;
 }
 export interface GridMetadata {
+    frozenRowsByView?: Record<string, string[]>;
+    rowHeightsByView?: Record<string, Record<string, number>>;
+    duplicateFields?: string[];
     cellStyles?: StyleMap;
     parents?: Record<string, string>;
     collapsed?: string[];
@@ -170,6 +174,8 @@ export function deleteRows(sheet: BaseDoc, ids: string[], subtree: boolean): voi
     }
     meta.parents = parents;
     meta.collapsed = meta.collapsed?.filter(id => !remove.has(id));
+    if (meta.frozenRowsByView) for (const view of Object.keys(meta.frozenRowsByView)) meta.frozenRowsByView[view] = meta.frozenRowsByView[view].filter(id => !remove.has(id));
+    if (meta.rowHeightsByView) for (const heights of Object.values(meta.rowHeightsByView)) for (const id of remove) delete heights[id];
     for (const id of remove) if (meta.cellStyles) delete meta.cellStyles[id];
     for (const [view, collapsed] of Object.entries(meta.collapsedByView ?? {})) meta.collapsedByView![view] = collapsed.filter(id => !remove.has(id));
     sheet.records = sheet.records.filter(r => !remove.has(String(r.id)));
@@ -335,6 +341,7 @@ export function parseTSV(text: string): string[][] {
 export function typedValue(raw: unknown, def: FieldDef): unknown {
     if (raw == null || raw === '')
         return null;
+    if (isFormula(raw) && !['checkbox', 'select', 'multi'].includes(def.type)) return String(raw);
     const text = String(raw);
     switch (def.type) {
         case 'number': {

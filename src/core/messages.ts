@@ -16,6 +16,7 @@ export function applySheetMessage(sheet: BaseDoc, message: SheetMessage): void {
       ops.renameField(sheet, message.oldName, message.newName);
       const meta = gridMeta(sheet);
       for (const rule of meta.rules ?? []) if (rule.field === message.oldName) rule.field = message.newName;
+      if (meta.duplicateFields) meta.duplicateFields = meta.duplicateFields.map(field => field === message.oldName ? message.newName : field);
       for (const row of Object.values(meta.cellStyles ?? {})) if (row[message.oldName]) { row[message.newName] = row[message.oldName]; delete row[message.oldName]; }
       for (const groups of Object.values(meta.columnGroupsByView ?? {})) for (const group of groups) group.fields = group.fields.map(field => field === message.oldName ? message.newName : field);
       for (const merge of meta.merges ?? []) {
@@ -42,6 +43,7 @@ export function applySheetMessage(sheet: BaseDoc, message: SheetMessage): void {
       for (const merge of [...meta.merges ?? []]) if (merge.fields.includes(message.name)) unmergeCells(sheet, merge.id);
       ops.deleteField(sheet, message.name);
       meta.rules = meta.rules?.filter(r => r.field !== message.name);
+      if (meta.duplicateFields) meta.duplicateFields = meta.duplicateFields.filter(field => field !== message.name);
       for (const row of Object.values(meta.cellStyles ?? {})) delete row[message.name];
       for (const [view, groups] of Object.entries(meta.columnGroupsByView ?? {})) meta.columnGroupsByView![view] = groups.map(group => ({ ...group, fields: group.fields.filter(field => field !== message.name) })).filter(group => group.fields.length > 1);
       if (meta.summary?.completionField === message.name) delete meta.summary.completionField;

@@ -12,9 +12,14 @@ import { WorkbookGrid } from "./WorkbookGrid";
 import { FeaturePanels } from "./FeaturePanels";
 import { defaultHost, type Host, type InMsg, type OutMsg } from "./host";
 import { defaultConfig } from "./config";
+import { WorkbookRibbon } from "./WorkbookRibbon";
+import { calculatedSheet, rebaseFormulas } from "../../src/core/formulas";
+import { formatCells } from "../../src/core/cell-style";
+import { typedValue } from "../../src/core/features";
+import { updateCell } from "../../src/core/ops";
 
 type Result = Extract<InMsg, { type: "operationResult" }>;
-type FeaturePanel = "search" | "format" | "details" | "templates" | "history" | "move" | null;
+type FeaturePanel = "search" | "format" | "details" | "templates" | "history" | "move" | "data" | null;
 
 export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   const session = useRef<WorkbookSession | null>(null);
@@ -35,6 +40,9 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [selectedCols, setSelectedCols] = useState<string[]>([]);
+  const [gridCommand, setGridCommand] = useState<{ id: number; kind: string; value?: string | number }>();
+  const commandId = useRef(0);
+  const publishedSheet = useRef("main");
   const [snapshots, setSnapshots] = useState<SnapshotMetadata[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,6 +58,10 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
     if (!current) return;
     const doc = failedDraft.current?.owner === current ? clone(failedDraft.current.doc) : current.document;
     if (!listSheets(doc).some(s => s.id === current.activeSheetId)) current.activeSheetId = "main";
+    if (publishedSheet.current !== current.activeSheetId) {
+      setGridCommand(undefined);
+      publishedSheet.current = current.activeSheetId;
+    }
     setDocument(doc);
     setActive(current.activeSheetId);
     const table = toTable(getSheet(doc, current.activeSheetId), path.current);
@@ -101,6 +113,17 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       const before = owner.document;
       const next = clone(before);
       change(next);
+      if (label !== "恢复历史快照") {
+        const nextSheets = new Set(listSheets(next).map(sheet => sheet.id));
+        for (const info of listSheets(before)) if (nextSheets.has(info.id)) {
+          const previousSheet = getSheet(before, info.id);
+          const nextSheet = getSheet(next, info.id);
+          const removed = Object.keys(previousSheet.fields).filter(field => !nextSheet.fields[field]);
+          const added = Object.keys(nextSheet.fields).filter(field => !previousSheet.fields[field]);
+          const rename = removed.length === 1 && added.length === 1 && Object.keys(previousSheet.fields).indexOf(removed[0]) === Object.keys(nextSheet.fields).indexOf(added[0]) ? { [removed[0]]: added[0] } : {};
+          rebaseFormulas(previousSheet, nextSheet, rename);
+        }
+      }
       const nextActive = focusSheet?.();
       validateWorkbook(next);
       if (JSON.stringify(before) === JSON.stringify(next)) return;
@@ -251,18 +274,22 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   if (!document) return <div className="loading" role="status">{error || "正在载入工作簿…"}</div>;
   const sheet = getSheet(document, active);
   const sheets = listSheets(document);
+  const issueCommand = (kind: string, value?: string | number) => {
+    if (kind === "fontColor" || kind === "fillColor") {
+      if (!selectedRows.length || !selectedCols.length) { setError("请先选择要设置颜色的单元格"); return; }
+      transact("设置单元格颜色", candidate => formatCells(candidate, selectedRows, selectedCols, { [kind === "fontColor" ? "color" : "background"]: String(value) }));
+      return;
+    }
+    setGridCommand({ id: ++commandId.current, kind, value });
+  };
+  const openPanel = (next: Exclude<FeaturePanel, null>) => {
+    if (next === "history") { loadHistory(); return; }
+    if (next === "details") setDetailId(selectedRows[0] ?? null);
+    setPanel(next);
+  };
   return <div className="personal-workbook" aria-busy={busy} onKeyDownCapture={event => {
     if ((event.ctrlKey || event.metaKey) && ["f", "h"].includes(event.key.toLowerCase())) { event.preventDefault(); event.stopPropagation(); setPanel("search"); }
   }}>
-    <div className="workbook-tools">
-      <strong>我的多维表格</strong>
-      <button onClick={() => setPanel("search")}>查找替换</button>
-      <button onClick={() => setPanel("format")}>条件格式与汇总</button>
-      <button onClick={() => setPanel("templates")}>模板</button>
-      <button onClick={loadHistory}>历史快照</button>
-      <span className="spacer" />
-      <span role="status">{busy ? "正在保存…" : "本地工作簿"}</span>
-    </div>
     {error && <div className="workbook-error" role="alert">{error}<button aria-label="关闭提示" onClick={() => setError("")}>×</button></div>}
     {hasDraft && <div className="workbook-error" role="alert"><span>修改已保留，尚未写入文件。</span><button onClick={() => enqueue(async () => {
       const draft = failedDraft.current!;
@@ -279,7 +306,13 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
     }}>导出待保存副本</button><button onClick={() => { failedDraft.current = null; setHasDraft(false); publish(); }}>放弃待保存修改</button></div>}
     <div className={`workbook-content${busy || hasDraft ? " workbook-busy" : ""}`}>
       <App key={active} worksheetMode host={sheetHost.current!} managedHistory={{ canUndo: session.current!.canUndo, canRedo: session.current!.canRedo, undo: () => navigateHistory("undo"), redo: () => navigateHistory("redo") }}
-        renderTable={props => <WorkbookGrid {...props} viewId={props.view.name} sheet={sheet} rows={deriveRows(sheet, props.view)} transact={transact}
+        renderToolbar={controls => <WorkbookRibbon controls={controls} sheet={sheet} selectedRows={selectedRows} selectedCols={selectedCols} onCommand={issueCommand} onPanel={openPanel} onCreateSheet={() => createWorksheet()} busy={busy}
+            onFormulaCommit={(id, field, value) => transact("编辑单元格内容与公式", candidate => {
+              const merge = readGridMeta(candidate).merges?.find(region => region.rowIds.includes(id) && region.fields.includes(field));
+              if (merge) merge.display = value;
+              else updateCell(candidate, id, field, typedValue(value, candidate.fields[field]));
+            })} />}
+        renderTable={props => <WorkbookGrid {...props} command={gridCommand} viewId={props.view.name} sheet={sheet} rows={deriveRows(calculatedSheet(sheet), props.view)} transact={transact}
           onDetail={id => { setDetailId(id); setPanel("details"); }}
           onSelection={(ids, cols) => { setSelectedRows(ids); setSelectedCols(cols); }}
           onMoveToSheet={ids => { setSelectedRows(ids); setPanel("move"); }} />}

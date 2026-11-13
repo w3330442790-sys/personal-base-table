@@ -75,6 +75,8 @@ export function remapRecords(sheet: BaseDoc): BaseDoc {
   if (grid?.parents) grid.parents = Object.fromEntries(Object.entries(grid.parents).map(([id, parent]) => [ids.get(id)!, ids.get(parent)!]).filter(([id, parent]) => id && parent));
   if (grid?.collapsed) grid.collapsed = grid.collapsed.map(id => ids.get(id)!).filter(Boolean);
   if (grid?.collapsedByView) for (const [view, collapsed] of Object.entries(grid.collapsedByView)) grid.collapsedByView[view] = collapsed.map(id => ids.get(id)!).filter(Boolean);
+  if (grid?.frozenRowsByView) for (const [view, frozen] of Object.entries(grid.frozenRowsByView)) grid.frozenRowsByView[view] = frozen.map(id => ids.get(id)!).filter(Boolean);
+  if (grid?.rowHeightsByView) for (const [view, heights] of Object.entries(grid.rowHeightsByView)) grid.rowHeightsByView[view] = Object.fromEntries(Object.entries(heights).filter(([id]) => ids.has(id)).map(([id, height]) => [ids.get(id)!, height]));
   if (grid?.cellStyles) grid.cellStyles = Object.fromEntries(Object.entries(grid.cellStyles).filter(([id]) => ids.has(id)).map(([id, values]) => [ids.get(id)!, values]));
   for (const merge of grid?.merges ?? []) {
     merge.id = genId();

@@ -16,6 +16,8 @@ import { defaultConfig, ROW_HEIGHT_PX, type UIConfig } from "./config";
 import { getSheet } from "../../src/core/workbook";
 import { readGridMeta } from "../../src/core/features";
 import { belowAnchor, pointerAnchor, type FloatingAnchor } from "./floating";
+import { calculatedSheet } from "../../src/core/formulas";
+import { toTable } from "../../src/core/doc";
 
 type Panel = "filter" | "sort" | "group" | "fields" | null;
 
@@ -29,12 +31,31 @@ export interface TableRenderProps {
   canReorder: boolean;
   onHeaderMenu: (col: string, x: number, y: number, element?: HTMLElement) => void;
   onResize: (col: string, width: number) => void;
+  onResizeColumns: (widths: Record<string, number>) => void;
   onReorderCols: (from: string, to: string) => void;
   onAddField: () => void;
   view: ViewDef;
 }
 
-export function App({ host = defaultHost(), managedHistory, renderTable, worksheetMode = false }: {
+export interface ToolbarControls {
+  addRow: () => void;
+  addField: () => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  filter: () => void;
+  sort: () => void;
+  group: () => void;
+  fields: () => void;
+  export: () => void;
+  toggleWrap: () => void;
+  freezeColumn: (field: string | undefined) => void;
+  setRowHeight: (height: UIConfig["rowHeight"]) => void;
+}
+
+export function App({ host = defaultHost(), managedHistory, renderTable, worksheetMode = false, renderToolbar }: {
+  renderToolbar?: (controls: ToolbarControls) => ReactNode;
   worksheetMode?: boolean;
   host?: Host;
   managedHistory?: { undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean };
@@ -175,7 +196,7 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
   }, [allCols, view]);
   const rows = useMemo(() => (table ? applyView(table.rows, view, table.fields) : []), [table, view]);
   const rowHeight = rowHOverride ?? config.rowHeight;
-  const cellConfig = useMemo<UIConfig>(() => ({ ...config, rowHeight }), [config, rowHeight]);
+  const cellConfig = useMemo<UIConfig>(() => ({ ...config, rowHeight, wrapText: view.wrapText ?? config.wrapText }), [config, rowHeight, view.wrapText]);
   const colWidths = useMemo(() => view.colWidths ?? {}, [view]);
 
   if (!table) return <div className="loading">加载中…</div>;
@@ -373,7 +394,8 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
     if (!table) return;
     const baseName = (table.path.split(/[\\/]/).pop() || "table").replace(/\.w?base$/, "");
     const formatting = table.document ? readGridMeta(getSheet(table.document, table.sheetId ?? "main")) : undefined;
-    const content = format === "csv" ? toCSV(cols, rows) : format === "xls" ? toXLS(cols, rows, formatting?.merges, formatting?.cellStyles) : toJSONDoc(table);
+    const exportRows = table.document ? applyView(toTable(calculatedSheet(getSheet(table.document, table.sheetId ?? "main")), table.path).rows, view, table.fields) : rows;
+    const content = format === "csv" ? toCSV(cols, exportRows) : format === "xls" ? toXLS(cols, exportRows, formatting?.merges, formatting?.cellStyles) : toJSONDoc(table);
     post({ type: "export", defaultName: `${baseName}.${format}`, content });
     setExportOpen(false);
   };
@@ -448,7 +470,8 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
 
       {worksheetMode && views.length > 1 && <label className="saved-view-selector">已有筛选方案<select aria-label="已有筛选方案" value={idx} onChange={event => setViewIdx(Number(event.target.value))}>{views.map((saved, index) => <option key={index} value={index}>{saved.name}</option>)}</select></label>}
 
-      <div className="toolbar">
+      {renderToolbar?.({ addRow, addField: () => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }, undo, redo, canUndo: managedHistory ? managedHistory.canUndo : !!past.length, canRedo: managedHistory ? managedHistory.canRedo : !!future.length, filter: () => togglePanel("filter"), sort: () => togglePanel("sort"), group: () => togglePanel("group"), fields: () => togglePanel("fields"), export: () => setExportOpen(true), toggleWrap: () => updateView({ wrapText: !cellConfig.wrapText }), freezeColumn: field => updateView({ frozen: field ? Math.max(0, cols.indexOf(field) + 1) : 0 }), setRowHeight: setRowHOverride })}
+      <div className={renderToolbar ? "ribbon-popover-host" : "toolbar"}>
         <button className="tool primary" onClick={addRow}>
           <Icon name="add" size={15} className="tool-ico" />新增记录
         </button>
@@ -526,7 +549,7 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
       </div>
 
       <div className="table-wrap">
-        {renderTable ? renderTable({ rows, cols, config: cellConfig, colWidths, groupField: group?.field, frozen, canReorder, onHeaderMenu: openFieldMenu, onResize: (col, width) => updateView({ colWidths: { ...colWidths, [col]: width } }), onReorderCols, onAddField: () => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }, view }) : <Table
+        {renderTable ? renderTable({ rows, cols, config: cellConfig, colWidths, groupField: group?.field, frozen, canReorder, onHeaderMenu: openFieldMenu, onResize: (col, width) => updateView({ colWidths: { ...colWidths, [col]: width } }), onResizeColumns: widths => updateView({ colWidths: { ...colWidths, ...widths } }), onReorderCols, onAddField: () => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }, view }) : <Table
           fields={table.fields}
           cols={cols}
           rows={rows}

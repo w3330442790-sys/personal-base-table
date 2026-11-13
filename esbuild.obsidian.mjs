@@ -12,7 +12,7 @@ fs.mkdirSync(outDir, { recursive: true });
 /** 把共享样式包进 `body .wbt-root { ... }`;@keyframes 不能嵌套,提到最外层 */
 function scopedCss() {
   let src = fs.readFileSync("webview/src/style.css", "utf8");
-  for (const file of ["workbook.css", "workbook-grid.css", "feature-panels.css"]) src += "\n" + fs.readFileSync(`webview/src/${file}`, "utf8");
+  for (const file of ["workbook.css", "workbook-grid.css", "feature-panels.css", "ribbon.css"]) src += "\n" + fs.readFileSync(`webview/src/${file}`, "utf8");
   const keyframes = [];
   let out = "";
   for (let i = 0; i < src.length; ) {
