@@ -47,33 +47,40 @@
 .import-preview tr:last-child td { border-bottom: 0; }
 .import-preview th:last-child, .import-preview td:last-child { border-right: 0; }
 
-/* 查找 / 替换 / 定位：沿用 Excel 式对话框的分组 */
-.search-tabs { display: flex; gap: 22px; margin: -2px 0 14px; border-bottom: 1px solid var(--border, #8885); }
-.search-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 0 0 8px; font-size: 14px; }
-.search-tabs button[aria-selected=true] { border-bottom-color: var(--vscode-focusBorder, var(--interactive-accent, #5294e2)); font-weight: 600; }
-.feature-panel > header .search-header-tabs { flex: 1 1 auto; gap: 22px; margin: 0 10px 0 0; border-bottom: 0; }
-.feature-panel > header .search-header-tabs button { padding: 2px 0 5px; }
-.search-card { border: 1px solid var(--border, #8885); border-radius: 8px; padding: 12px; background: var(--vscode-input-background, var(--background-secondary, #8881)); }
-.search-row { display: flex; flex-direction: row; align-items: center; gap: 10px; margin-bottom: 10px; }
-.search-row > span { flex: 0 0 48px; color: var(--vscode-descriptionForeground, var(--text-muted, #777)); }
-.search-row > input, .search-row > select { flex: 1 1 auto; width: auto; min-width: 0; margin: 0; }
-.search-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin: 2px 0 10px; }
-.search-scope > span { color: var(--vscode-descriptionForeground, var(--text-muted, #777)); }
-.search-scope label { flex-direction: row; align-items: center; gap: 5px; margin: 0; font-size: 13px; }
-.search-scope input[type=radio], .search-options input[type=checkbox] { width: auto; min-height: 0; height: auto; padding: 0; margin: 0; }
+/* 查找 / 替换 / 定位：Excel 式分组，保持紧凑、避免标签竖排 */
+.feature-panel.search-panel { width: min(460px, calc(100% - 24px)); }
+.feature-panel > header > button[aria-label="关闭面板"] { flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; font-size: 19px; line-height: 1; opacity: .7; }
+.feature-panel > header > button[aria-label="关闭面板"]:hover { opacity: 1; background: var(--background-modifier-hover, var(--vscode-list-hoverBackground, #8882)); }
+.search-tabs { display: flex; gap: 24px; margin: 0; border-bottom: 0; }
+.search-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 0 0 5px; font-size: 15px; color: var(--vscode-descriptionForeground, var(--text-muted, #777)); }
+.search-tabs button[aria-selected=true] { border-bottom-color: var(--vscode-focusBorder, var(--interactive-accent, #5294e2)); color: var(--vscode-foreground, var(--text-normal, #222)); font-weight: 600; }
+.feature-panel > header .search-header-tabs { flex: 1 1 auto; margin: 0 12px 0 0; }
+.feature-panel > header .search-header-tabs button { padding: 2px 0 6px; }
+.feature-panel.search-panel .search-card { border: 1px solid var(--background-modifier-border, var(--border, #8885)); border-radius: 10px; padding: 16px; background: var(--background-primary, var(--vscode-editor-background, #fff)); }
+.feature-panel.search-panel .search-row { display: flex; flex-direction: row; align-items: center; gap: 12px; margin: 0 0 14px; }
+.feature-panel.search-panel .search-row > span { flex: 0 0 56px; color: var(--vscode-descriptionForeground, var(--text-muted, #777)); font-size: 13px; white-space: nowrap; }
+.feature-panel.search-panel .search-row > input { flex: 1 1 auto; width: auto; min-width: 0; height: 34px; margin: 0; padding: 6px 10px; border-radius: 6px; }
+.feature-panel.search-panel .search-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; margin: 0 0 14px; }
+.feature-panel.search-panel .search-scope > span { flex: 0 0 56px; color: var(--vscode-descriptionForeground, var(--text-muted, #777)); font-size: 13px; }
+.feature-panel.search-panel .search-scope label { display: flex; flex-direction: row; align-items: center; gap: 7px; margin: 0; font-size: 13px; white-space: nowrap; }
+.feature-panel.search-panel .search-scope input[type=radio] { width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; accent-color: var(--interactive-accent, var(--vscode-focusBorder, #4a7dff)); }
 .search-more { border: 0; background: transparent; padding: 0; color: var(--vscode-textLink-foreground, var(--text-accent, #4a7dff)); font-size: 13px; }
-.search-options { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; padding-top: 10px; border-top: 1px dashed var(--border, #8885); }
-.search-options label { flex-direction: row; align-items: center; gap: 8px; margin: 0; font-size: 13px; }
-.search-options label > select { flex: 1; min-width: 0; }
+.search-options { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; padding-top: 12px; border-top: 1px dashed var(--border, #8885); }
+.feature-panel.search-panel .search-options label { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; font-size: 13px; }
+.feature-panel.search-panel .search-options label > span { flex: 0 0 56px; color: var(--vscode-descriptionForeground, var(--text-muted, #777)); }
+.feature-panel.search-panel .search-options label > select { flex: 1; min-width: 0; height: 32px; }
+.feature-panel.search-panel .search-options input[type=checkbox] { width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; }
 .search-hint { margin: 4px 0 0; color: var(--vscode-descriptionForeground, var(--text-muted, #777)); }
-.search-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
-.search-footer .search-spacer { flex: 1 1 12px; }
-.search-footer .primary { background: var(--interactive-accent, var(--vscode-button-background, #4a7dff)); color: var(--text-on-accent, var(--vscode-button-foreground, #fff)); border-color: transparent; }
-.search-footer button:disabled { opacity: .45; }
+.feature-panel.search-panel .search-footer { display: flex; align-items: center; gap: 7px; margin-top: 18px; }
+.feature-panel.search-panel .search-footer .search-spacer { flex: 1 1 12px; }
+.feature-panel.search-panel .search-footer button { min-height: 32px; padding: 5px 12px; border-radius: 6px; }
+.feature-panel.search-panel .search-footer .primary { background: var(--interactive-accent, var(--vscode-button-background, #4a7dff)); color: var(--text-on-accent, var(--vscode-button-foreground, #fff)); border-color: transparent; }
+.feature-panel.search-panel .search-footer button:disabled { opacity: .45; }
 .search-count { color: var(--vscode-descriptionForeground, var(--text-muted, #777)); font-size: 12px; white-space: nowrap; }
-.search-results { list-style: none; margin: 12px 0 0; padding: 0; max-height: 240px; overflow: auto; border-top: 1px solid var(--border, #8885); }
+.search-results { list-style: none; margin: 14px 0 0; padding: 0; max-height: 240px; overflow: auto; border: 1px solid var(--background-modifier-border, var(--border, #8885)); border-radius: 8px; }
 .search-results li { border-bottom: 1px solid var(--border, #8885); }
+.search-results li:last-child { border-bottom: 0; }
 .search-results li.active { background: var(--vscode-list-activeSelectionBackground, var(--background-modifier-hover, #8882)); }
-.search-result { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; padding: 7px 4px; border: 0; border-radius: 0; background: transparent; text-align: left; }
+.search-result { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; padding: 8px 10px; border: 0; border-radius: 0; background: transparent; text-align: left; }
 .search-result-path { color: var(--vscode-descriptionForeground, var(--text-muted, #777)); font-size: 11px; }
 .search-result-value { font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }

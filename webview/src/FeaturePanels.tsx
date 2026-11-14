@@ -36,7 +36,6 @@ export interface FeaturePanelsProps {
   resolveResource?: (path: string) => string;
   onImportTable?: (doc: BaseDoc, name: string) => void;
   searchTab?: SearchTab;
-  onSearchTab?: (tab: SearchTab) => void;
 }
 const text = (value: unknown): string => Array.isArray(value) ? value.map(String).join(', ') : String(value ?? '');
 const grid = (sheet: BaseDoc): Grid => ((sheet as ExtendedDoc).personalGrid ??= {});
@@ -203,7 +202,7 @@ export function FeaturePanels(props: FeaturePanelsProps) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   if (!props.panel) return null;
-  return <aside ref={panelRef} className="feature-panel" role="dialog" aria-label={titles[props.panel]} style={position ? { ...position, right: 'auto' } : undefined} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); props.onClose(); } }}>
+  return <aside ref={panelRef} className={`feature-panel${props.panel === 'search' ? ' search-panel' : ''}`} role="dialog" aria-label={titles[props.panel]} style={position ? { ...position, right: 'auto' } : undefined} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); props.onClose(); } }}>
     <header title="拖动标题栏移动窗口" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={() => { dragRef.current = null; }}>
       {props.panel === 'search' ? <div className="search-tabs search-header-tabs" role="tablist" aria-label="查找操作">
         {([
@@ -215,7 +214,7 @@ export function FeaturePanels(props: FeaturePanelsProps) {
       <button aria-label="关闭面板" onClick={props.onClose}>×</button>
     </header>
     <div className="feature-panel-body">
-      {props.panel === 'search' && <SearchPanel {...props} searchTab={searchTab} onSearchTab={setSearchTab} />}
+      {props.panel === 'search' && <SearchPanel {...props} searchTab={searchTab} />}
       {props.panel === 'format' && <FormatPanel {...props} />}
       {props.panel === 'details' && <DetailsPanel key={`${props.sheetId}:${props.detailId}`} {...props} />}
       {props.panel === 'templates' && <TemplatesPanel {...props} />}
@@ -231,7 +230,7 @@ function ErrorMessage({ message }: { message: string }) { return message ? <p cl
 type SearchTab = 'find' | 'replace' | 'goto';
 type SearchMatch = { sheetId: string; sheetName: string; rowId: string; field: string; before: unknown; after: unknown; invalid: string };
 
-function SearchPanel(props: FeaturePanelsProps & { searchTab: SearchTab; onSearchTab: (tab: SearchTab) => void }) {
+function SearchPanel(props: FeaturePanelsProps & { searchTab: SearchTab }) {
   const tab = props.searchTab;
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
@@ -344,7 +343,7 @@ function SearchPanel(props: FeaturePanelsProps & { searchTab: SearchTab; onSearc
       <div className="search-card">
         <label className="search-row">
           <span>查找</span>
-          <input list="personal-base-table-search-history" autoFocus value={query} onChange={event => updateQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); findNext(); } }} />
+          <input list="personal-base-table-search-history" autoFocus placeholder="输入要查找的内容" value={query} onChange={event => updateQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); findNext(); } }} />
         </label>
         <datalist id="personal-base-table-search-history">{history.map(value => <option key={value} value={value} />)}</datalist>
         {tab === 'replace' && <label className="search-row"><span>替换为</span><input value={replacement} onChange={event => setReplacement(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); replaceCurrent(); } }} /></label>}
