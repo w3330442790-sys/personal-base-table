@@ -10,7 +10,6 @@
 - 导出增加 Markdown 表格，使用当前视图的可见列和筛选结果。
 - 命令面板新增“快速新增记录”：当前表格直接新增，否则从库内 `.wbase` 中选择。
 - 首次写入前自动备份到 `.personal-base-table-backups`，默认开启，可在设置关闭。
-- 新增 GitHub Actions：测试、类型检查和 Obsidian 构建。
 
 ### 修复
 
