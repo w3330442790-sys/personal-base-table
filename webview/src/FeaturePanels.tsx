@@ -5,6 +5,7 @@ import { genId } from '../../src/core/types';
 import { typedValue } from '../../src/core/features';
 import { DataToolsPanel } from './DataToolsPanel';
 import { ImportPanel } from './ImportPanel';
+import { parseCellAddress } from './address';
 import { floatingPosition, visibleOwnerBounds, visibleViewport } from './floating';
 import { addSheet, clone as copy, getSheet as sheetAt, workbook as personal, remapRecords } from '../../src/core/workbook';
 
@@ -34,6 +35,8 @@ export interface FeaturePanelsProps {
   onOpenLink?: (target: string) => void;
   resolveResource?: (path: string) => string;
   onImportTable?: (doc: BaseDoc, name: string) => void;
+  searchTab?: SearchTab;
+  onSearchTab?: (tab: SearchTab) => void;
 }
 const text = (value: unknown): string => Array.isArray(value) ? value.map(String).join(', ') : String(value ?? '');
 const grid = (sheet: BaseDoc): Grid => ((sheet as ExtendedDoc).personalGrid ??= {});
@@ -133,6 +136,7 @@ export function HistorySheetDifference({ current, snapshot }: { current: BaseDoc
 
 const titles = { search: '查找与替换', format: '条件格式与父行汇总', details: '行详情', templates: '模板', history: '历史快照', move: '跨表移动', data: '重复项与去重', import: '导入表格' };
 export function FeaturePanels(props: FeaturePanelsProps) {
+  const [searchTab, setSearchTab] = useState<SearchTab>('find');
   const panelRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number } | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number; maxWidth: number; maxHeight: number } | null>(null);
@@ -200,9 +204,18 @@ export function FeaturePanels(props: FeaturePanelsProps) {
   };
   if (!props.panel) return null;
   return <aside ref={panelRef} className="feature-panel" role="dialog" aria-label={titles[props.panel]} style={position ? { ...position, right: 'auto' } : undefined} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); props.onClose(); } }}>
-    <header title="拖动标题栏移动窗口" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={() => { dragRef.current = null; }}><h2>{titles[props.panel]}</h2><button aria-label="关闭面板" onClick={props.onClose}>×</button></header>
+    <header title="拖动标题栏移动窗口" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={() => { dragRef.current = null; }}>
+      {props.panel === 'search' ? <div className="search-tabs search-header-tabs" role="tablist" aria-label="查找操作">
+        {([
+          ['find', '查找'],
+          ['replace', '替换'],
+          ['goto', '定位'],
+        ] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={searchTab === value} onClick={() => setSearchTab(value)}>{label}</button>)}
+      </div> : <h2>{titles[props.panel]}</h2>}
+      <button aria-label="关闭面板" onClick={props.onClose}>×</button>
+    </header>
     <div className="feature-panel-body">
-      {props.panel === 'search' && <SearchPanel {...props} />}
+      {props.panel === 'search' && <SearchPanel {...props} searchTab={searchTab} onSearchTab={setSearchTab} />}
       {props.panel === 'format' && <FormatPanel {...props} />}
       {props.panel === 'details' && <DetailsPanel key={`${props.sheetId}:${props.detailId}`} {...props} />}
       {props.panel === 'templates' && <TemplatesPanel {...props} />}
@@ -215,14 +228,22 @@ export function FeaturePanels(props: FeaturePanelsProps) {
 }
 function ErrorMessage({ message }: { message: string }) { return message ? <p className="feature-error" role="alert">{message}</p> : null; }
 
-function SearchPanel(props: FeaturePanelsProps) {
+type SearchTab = 'find' | 'replace' | 'goto';
+type SearchMatch = { sheetId: string; sheetName: string; rowId: string; field: string; before: unknown; after: unknown; invalid: string };
+
+function SearchPanel(props: FeaturePanelsProps & { searchTab: SearchTab; onSearchTab: (tab: SearchTab) => void }) {
+  const tab = props.searchTab;
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
   const [scope, setScope] = useState('sheet');
   const [matchCase, setMatchCase] = useState(false);
   const [whole, setWhole] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
+  const [active, setActive] = useState<number | null>(null);
+  const [goto, setGoto] = useState('');
+  const [history, setHistory] = useState<string[]>([]);
   const [error, setError] = useState('');
-  const matches: Array<{ sheetId: string; sheetName: string; rowId: string; field: string; before: unknown; after: unknown; invalid: string }> = [];
+  const matches: SearchMatch[] = [];
   const names = scope === 'workbook' ? props.sheetNames : props.sheetNames.filter(item => item.id === props.sheetId);
   if (query) for (const name of names) {
     const sheet = sheetAt(props.document, name.id);
@@ -243,8 +264,46 @@ function SearchPanel(props: FeaturePanelsProps) {
       matches.push({ sheetId: name.id, sheetName: name.name, rowId: String(record.id), field, before, after, invalid });
     }
   }
-  const replace = (items: typeof matches) => {
+  const invalidCount = matches.filter(item => item.invalid).length;
+  const current = matches[Math.min(active ?? 0, Math.max(0, matches.length - 1))];
+  const updateQuery = (value: string) => { setQuery(value); setActive(null); setError(''); };
+  const changeScope = (value: string) => { setScope(value); setActive(null); setError(''); };
+  const remember = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed) setHistory(previous => [trimmed, ...previous.filter(item => item !== trimmed)].slice(0, 8));
+  };
+  const requireMatches = (): boolean => {
     setError('');
+    if (!query.trim()) { setError('请输入查找内容'); return false; }
+    if (scope === 'column' && !props.selectedCols.length) { setError('请先选择要查找的列'); return false; }
+    if (scope === 'selection' && (!props.selectedCols.length || !props.selectedRows.length)) { setError('请先选择要查找的区域'); return false; }
+    if (!matches.length) { setError('没有找到匹配的单元格'); return false; }
+    return true;
+  };
+  const navigate = (index: number) => {
+    const item = matches[index];
+    if (!item) return;
+    setActive(index);
+    setError('');
+    remember(query);
+    props.onNavigate?.(item.sheetId, item.rowId, item.field);
+  };
+  const findNext = () => {
+    if (!requireMatches()) return;
+    navigate(active === null ? 0 : (active + 1) % matches.length);
+  };
+  const findPrevious = () => {
+    if (!requireMatches()) return;
+    navigate(active === null ? matches.length - 1 : (active - 1 + matches.length) % matches.length);
+  };
+  const findAll = () => {
+    if (!requireMatches()) return;
+    setActive(0);
+    remember(query);
+  };
+  const applyReplace = (items: SearchMatch[]) => {
+    setError('');
+    if (!items.length) { setError('没有可替换的单元格'); return; }
     if (items.some(item => item.invalid)) { setError('请修正预览中的类型冲突后再替换'); return; }
     try {
       props.transactDocument(items.length === 1 ? '替换单元格' : '全部替换', doc => {
@@ -255,24 +314,74 @@ function SearchPanel(props: FeaturePanelsProps) {
           record[item.field] = convertPanelValue(item.after, sheet.fields[item.field]);
         }
       }, true);
+      remember(query);
+      setActive(null);
     } catch (failure) { setError((failure as Error).message); }
   };
-  return <>
-    <label>查找<input value={query} onChange={event => setQuery(event.target.value)} autoFocus /></label>
-    <label>替换为<input value={replacement} onChange={event => setReplacement(event.target.value)} /></label>
-    <label>范围<select value={scope} onChange={event => setScope(event.target.value)}><option value="sheet">当前工作表（含隐藏行）</option><option value="column">选中列</option><option value="selection">选中区域</option><option value="workbook">整个文件</option></select></label>
-    <label className="feature-inline"><input type="checkbox" checked={matchCase} onChange={event => setMatchCase(event.target.checked)} />区分大小写</label>
-    <label className="feature-inline"><input type="checkbox" checked={whole} onChange={event => setWhole(event.target.checked)} />全字匹配（整个单元格或选项）</label>
-    <p role="status">找到 {matches.length} 个单元格，{matches.filter(item => item.invalid).length} 个类型冲突</p>
-    <button disabled={!matches.length || matches.some(item => item.invalid)} onClick={() => replace(matches)}>替换全部</button>
-    <ErrorMessage message={error} />
-    <ol className="feature-results">{matches.map(item => <li key={`${item.sheetId}:${item.rowId}:${item.field}`}>
-      <button className="feature-location" title="定位到此单元格" onClick={() => props.onNavigate?.(item.sheetId, item.rowId, item.field)}>{item.sheetName} / {item.rowId} / {item.field}</button>
-      <div className="feature-before">{text(item.before)}</div><div>→ {text(item.after)}</div>
-      {item.invalid && <p className="feature-error">{item.invalid}</p>}
-      <button disabled={!!item.invalid} onClick={() => replace([item])}>替换此项</button>
-    </li>)}</ol>
-  </>;
+  const replaceCurrent = () => {
+    if (!current) { setError('没有可替换的单元格'); return; }
+    if (!requireMatches()) return;
+    applyReplace([current]);
+  };
+  const replaceAll = () => {
+    if (!requireMatches()) return;
+    if (invalidCount) { setError('请修正预览中的类型冲突后再替换'); return; }
+    applyReplace(matches);
+  };
+  const goTo = () => {
+    setError('');
+    const target = parseCellAddress(goto, Object.keys(props.sheet.fields), props.sheet.records.map(record => ({ id: String(record.id) })));
+    if (!target) { setError('请输入有效的 A1 地址（例如 C5）'); return; }
+    props.onNavigate?.(props.sheetId, target.rowId, target.field);
+  };
+  return <div className="search-dialog">
+    {tab === 'goto' ? <div className="search-card">
+      <label className="search-row"><span>单元格</span><input autoFocus value={goto} placeholder="例如 C5" onChange={event => { setGoto(event.target.value); setError(''); }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); goTo(); } }} /></label>
+      <p className="search-hint">输入当前工作表中的 A1 地址，定位到对应记录和字段。</p>
+      <ErrorMessage message={error} />
+      <div className="search-footer"><span className="search-spacer" /><button type="button" className="primary" onClick={goTo}>定位</button></div>
+    </div> : <>
+      <div className="search-card">
+        <label className="search-row">
+          <span>查找</span>
+          <input list="personal-base-table-search-history" autoFocus value={query} onChange={event => updateQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); findNext(); } }} />
+        </label>
+        <datalist id="personal-base-table-search-history">{history.map(value => <option key={value} value={value} />)}</datalist>
+        {tab === 'replace' && <label className="search-row"><span>替换为</span><input value={replacement} onChange={event => setReplacement(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); replaceCurrent(); } }} /></label>}
+        <div className="search-scope">
+          <span>范围</span>
+          <label><input type="radio" checked={scope !== 'workbook'} onChange={() => changeScope('sheet')} />当前工作表</label>
+          <label><input type="radio" checked={scope === 'workbook'} onChange={() => changeScope('workbook')} />所有工作表</label>
+        </div>
+        <button type="button" className="search-more" aria-expanded={advanced} onClick={() => setAdvanced(value => !value)}>更多选项 <span aria-hidden="true">{advanced ? '⌃' : '⌄'}</span></button>
+        {advanced && <div className="search-options">
+          <label><span>范围</span><select value={scope === 'workbook' ? 'sheet' : scope} disabled={scope === 'workbook'} onChange={event => changeScope(event.target.value)}><option value="sheet">整张工作表</option><option value="column">选中列</option><option value="selection">选中区域</option></select></label>
+          <label><input type="checkbox" checked={matchCase} onChange={event => { setMatchCase(event.target.checked); setActive(null); }} />区分大小写</label>
+          <label><input type="checkbox" checked={whole} onChange={event => { setWhole(event.target.checked); setActive(null); }} />全字匹配（整个单元格或选项）</label>
+        </div>}
+        <ErrorMessage message={error} />
+        <div className="search-footer">
+          <button type="button" onClick={findAll} disabled={!query.trim()}>查找全部</button>
+          {tab === 'replace' && <button type="button" onClick={replaceAll} disabled={!matches.length || invalidCount > 0}>全部替换</button>}
+          <span className="search-count" role="status">{query.trim() ? `${matches.length} 个结果${invalidCount ? ` · ${invalidCount} 个类型冲突` : ''}` : ''}</span>
+          <span className="search-spacer" />
+          <button type="button" aria-label="上一个结果" title="上一个结果" onClick={findPrevious} disabled={!matches.length}>‹</button>
+          <button type="button" aria-label="下一个结果" title="下一个结果" onClick={findNext} disabled={!matches.length}>›</button>
+          <button type="button" className="primary" onClick={tab === 'replace' ? replaceCurrent : findNext} disabled={!query.trim() || (tab === 'replace' && (!current || !!current.invalid))}>{tab === 'replace' ? '替换' : '查找'}</button>
+        </div>
+      </div>
+      {matches.length > 0 && <ol className="search-results" aria-label="查找结果">
+        {matches.map((item, index) => <li key={`${item.sheetId}:${item.rowId}:${item.field}`} className={index === active ? 'active' : ''}>
+          <button type="button" className="search-result" title="定位到此单元格" onClick={() => navigate(index)}>
+            <span className="search-result-path">{item.sheetName} / {item.field} / {item.rowId}</span>
+            <span className="search-result-value">{text(item.before)}</span>
+            {tab === 'replace' && <span className="search-result-value">→ {text(item.after)}</span>}
+          </button>
+          {item.invalid && <p className="feature-error">{item.invalid}</p>}
+        </li>)}
+      </ol>}
+    </>}
+  </div>;
 }
 
 const operators = [['contains', '包含'], ['notContains', '不包含'], ['is', '等于'], ['isNot', '不等于'], ['empty', '为空'], ['notEmpty', '非空'], ['gt', '大于'], ['lt', '小于'], ['gte', '大于等于'], ['lte', '小于等于'], ['checked', '已勾选'], ['unchecked', '未勾选'], ['before', '日期早于'], ['after', '日期晚于']];

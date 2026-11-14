@@ -43,6 +43,11 @@ test('every panel renders its normal entry point and details rejects executable 
     assert.doesNotMatch(html, /href="javascript:/);
     assert.doesNotMatch(html, /src="javascript:/);
   }
+  const search = renderToStaticMarkup(createElement(FeaturePanels,{...props,panel:'search'}));
+  assert.match(search, /search-tabs/);
+  assert.match(search, /查找全部/);
+  assert.match(search, /更多选项/);
+  assert.match(search, /定位/);
 });
 
 test('history details identify concrete field and cell values in restore direction', () => {

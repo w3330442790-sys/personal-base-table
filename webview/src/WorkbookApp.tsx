@@ -385,7 +385,6 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
         setDetailId(rowId);
         setSelectedRows([rowId]);
         setSelectedCols([field]);
-        setPanel(null);
         publish();
         // publish() clears stale grid commands when switching sheets, so issue
         // the locate command after it has selected the destination sheet.
