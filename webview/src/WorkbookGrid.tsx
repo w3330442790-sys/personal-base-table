@@ -636,10 +636,10 @@ export function WorkbookGrid(props: Props) {
                 const rect = header.getBoundingClientRect();
                 props.onHeaderMenu(col, rect.left, rect.bottom + 4, header);
             };
-            return <>
+            return <span className="personal-header-inner">
                 <button className="personal-header-label" title={dir ? `当前${dir === 'asc' ? '升序' : '降序'}，点击切换` : '点击升序，再点降序'} onClick={event => props.onSort ? props.onSort(col) : openMenu(event)}>{columnLabel((fieldIndices.get(col) ?? 0))} {col}{dir ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}</button>
                 <button className="personal-header-menu" aria-label={`${col} 字段菜单`} title="字段菜单" onClick={event => { event.stopPropagation(); openMenu(event); }}>▾</button>
-            </>;
+            </span>;
         })()}<span className="personal-col-resize" title="拖动调整列宽，双击适应内容" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); autoColumnWidth([col]); }} onPointerDown={event => resizeColumn(event, col, props.colWidths[col] ?? 160)}/></th>)}<th><button onClick={props.onAddField} title="新增字段">＋</button></th></tr></thead>
       <tbody>{sourceRows.map((row, sourceIndex) => {
             const ri = rowIndices.get(row.id) ?? -1;

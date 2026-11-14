@@ -46,6 +46,7 @@ test('the grid still renders when the document temporarily lacks a whole column 
 test('column headers expose a sort cycle and a separate field menu', () => {
   const ascending = render(<WorkbookGrid {...props} sorts={[{ field: '名称', dir: 'asc' }]} onSort={() => {}} />);
   assert.match(ascending, /▲/);
+  assert.match(ascending, /personal-header-inner/);
   assert.match(ascending, /personal-header-label/);
   assert.match(ascending, /personal-header-menu/);
   const descending = render(<WorkbookGrid {...props} sorts={[{ field: '名称', dir: 'desc' }]} onSort={() => {}} />);
