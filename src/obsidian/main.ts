@@ -1,5 +1,5 @@
 // Weilanx Base Table · Obsidian 插件入口
-import { App, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile, TFolder, Notice, normalizePath, moment } from "obsidian";
+import { App, FuzzySuggestModal, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile, TFolder, Notice, normalizePath, moment } from "obsidian";
 import { VIEW_TYPE, WbaseView, isWbase } from "./view";
 import type { UIConfig } from "../../webview/src/config";
 import { parseDoc, serializeDoc, starterDoc } from "../core/doc";
@@ -16,6 +16,8 @@ interface Settings {
   wrapText: boolean;
   /** 笔记改名时同步更新表格里的 [[链接]] */
   syncLinksOnRename: boolean;
+  /** 首次写入前把原始文件备份到库内隐藏目录 */
+  autoBackup: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -28,6 +30,7 @@ const DEFAULTS: Settings = {
   colorfulTags: true,
   wrapText: false,
   syncLinksOnRename: true,
+  autoBackup: true,
 };
 
 /** 命令名跟随 Obsidian 界面语言 */
@@ -45,6 +48,7 @@ export default class WeilanxBaseTablePlugin extends Plugin {
 
     this.addRibbonIcon("table", t("新建多维表格", "New base table"), () => this.createTable());
     this.addCommand({ id: "create-table", name: t("新建多维表格", "Create new base table"), callback: () => this.createTable() });
+    this.addCommand({ id: "quick-add-record", name: t("快速新增记录", "Quick add record"), callback: () => this.quickAddRecord() });
 
     // 作用于当前表格视图的命令:没有打开表格时在命令面板里不显示
     const viewCommand = (id: string, cn: string, en: string, c: "undo" | "redo" | "addRow" | "export") =>
@@ -78,6 +82,19 @@ export default class WeilanxBaseTablePlugin extends Plugin {
 
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onRename(file, oldPath)));
     this.addSettingTab(new SettingsTab(this.app, this));
+    this.warnIfUpstreamEnabled();
+  }
+
+  /** 原版插件保存同一个 .wbase 时可能忽略 personal/personalGrid。 */
+  private warnIfUpstreamEnabled(): void {
+    try {
+      const plugins = (this.app as unknown as { plugins?: { enabledPlugins?: Set<string> } }).plugins;
+      if (plugins?.enabledPlugins?.has?.("weilanx-base-table")) {
+        new Notice(t("检测到原版 Weilanx Base Table 已启用。请只保留个人版编辑扩展表格，避免扩展数据被原版覆盖。", "The upstream Weilanx Base Table is enabled. Keep only the personal edition enabled for extended tables to avoid dropping extension data."), 12000);
+      }
+    } catch {
+      // app.plugins is internal API; a warning must never block plugin load.
+    }
   }
 
   uiConfig(): UIConfig {
@@ -93,6 +110,20 @@ export default class WeilanxBaseTablePlugin extends Plugin {
     await this.saveData(this.settings);
     // 设置改动即时生效
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) (leaf.view as WbaseView).push();
+  }
+
+  /** 当前表格直接新增；没有表格打开时，选择库内一个 .wbase 后新增。 */
+  private quickAddRecord(): void {
+    const active = this.app.workspace.getActiveViewOfType(WbaseView);
+    if (active) { active.command("addRow"); return; }
+    const files = this.app.vault.getFiles().filter(isWbase).sort((a, b) => a.path.localeCompare(b.path));
+    if (!files.length) { new Notice(t("库里还没有 .wbase 表格", "No .wbase tables in this vault")); return; }
+    new TablePickerModal(this.app, files, async (file) => {
+      const leaf = this.app.workspace.getLeaf(true);
+      await leaf.openFile(file);
+      if (!(leaf.view instanceof WbaseView)) { new Notice(t("无法打开这个表格", "Could not open this table")); return; }
+      window.setTimeout(() => leaf.view instanceof WbaseView && leaf.view.command("addRow"), 0);
+    });
   }
 
   /** 在指定目录(默认:当前文件所在目录)新建一张表并打开 */
@@ -145,6 +176,20 @@ export default class WeilanxBaseTablePlugin extends Plugin {
     }
     if (total) new Notice(t(`已更新 ${total} 处表格链接:[[${oldName}]] → [[${newName}]]`, `Updated ${total} table link(s) to [[${newName}]]`));
   }
+}
+
+class TablePickerModal extends FuzzySuggestModal<TFile> {
+  constructor(
+    app: App,
+    private readonly files: TFile[],
+    private readonly choose: (file: TFile) => void
+  ) {
+    super(app);
+    this.setPlaceholder(t("选择要新增记录的表格", "Choose a table for the new record"));
+  }
+  getItems(): TFile[] { return this.files; }
+  getItemText(file: TFile): string { return file.path; }
+  onChooseItem(file: TFile): void { this.choose(file); }
 }
 
 class SettingsTab extends PluginSettingTab {
@@ -213,6 +258,15 @@ class SettingsTab extends PluginSettingTab {
       .addToggle((tg) =>
         tg.setValue(s.syncLinksOnRename).onChange((v) => {
           s.syncLinksOnRename = v;
+          void save();
+        })
+      );
+    new Setting(containerEl)
+      .setName(t("修改前自动备份", "Back up before first write"))
+      .setDesc(t("每次打开或外部更新后，首次保存前把原文件备份到库内 .personal-base-table-backups；备份失败会停止保存", "Back up the original file to .personal-base-table-backups before the first save after opening or an external update. A failed backup blocks the save."))
+      .addToggle((tg) =>
+        tg.setValue(s.autoBackup).onChange((v) => {
+          s.autoBackup = v;
           void save();
         })
       );

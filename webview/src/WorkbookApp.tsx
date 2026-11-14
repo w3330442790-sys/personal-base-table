@@ -22,7 +22,7 @@ import { TableErrorBoundary } from "./TableErrorBoundary";
 import { browserDraftStorage, clearDraft, readDraft, writeDraft, type DraftStorage } from "./draft";
 
 type Result = Extract<InMsg, { type: "operationResult" }>;
-type FeaturePanel = "search" | "format" | "details" | "templates" | "history" | "move" | "data" | null;
+type FeaturePanel = "search" | "format" | "details" | "templates" | "history" | "move" | "data" | "import" | null;
 
 export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   const session = useRef<WorkbookSession | null>(null);
@@ -392,6 +392,11 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
         setGridCommand({ id: ++commandId.current, kind: "locate", rowId, field });
       }}
       onOpenLink={target => host.post({ type: "openLink", target })} resolveResource={host.resolveResource}
+      onImportTable={(imported, name) => {
+        let created = "";
+        transactDocument("导入表格", doc => { created = addSheet(doc, name, imported); }, false, () => created);
+        setPanel(null);
+      }}
     />
   </div>;
 }

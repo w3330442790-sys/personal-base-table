@@ -65,10 +65,21 @@ function evalCond(row: Row, cond: FilterCond, fields: Record<string, FieldDef>):
   }
 }
 
+function emptyValue(value: unknown): boolean {
+  return value == null || value === "" || (Array.isArray(value) && value.length === 0);
+}
+
 function multiSort(rows: Row[], sorts: SortSpec[], fields: Record<string, FieldDef>): Row[] {
   return [...rows].sort((a, b) => {
     for (const sp of sorts) {
-      const r = cmp(a.values[sp.field], b.values[sp.field], fields[sp.field]?.type);
+      const av = a.values[sp.field];
+      const bv = b.values[sp.field];
+      // Empty cells stay at the end in both directions.
+      if (emptyValue(av) || emptyValue(bv)) {
+        if (emptyValue(av) && emptyValue(bv)) continue;
+        return emptyValue(av) ? 1 : -1;
+      }
+      const r = cmp(av, bv, fields[sp.field]?.type);
       if (r !== 0) return sp.dir === "desc" ? -r : r;
     }
     return 0;

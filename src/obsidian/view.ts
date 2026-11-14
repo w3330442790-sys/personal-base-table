@@ -22,6 +22,9 @@ export class WbaseView extends TextFileView {
   private lastText = "";
   /** 文件不是合法 JSON 时为 true:不渲染表格,也绝不写回,避免把坏文件覆盖成空表 */
   private broken = false;
+  /** 本次加载/外部更新后的原始文本,用于首次写入前备份 */
+  private sourceText = "";
+  private backupDone = false;
   private root: Root | null = null;
   private listeners = new Set<(m: InMsg) => void>();
   private revision = 0;
@@ -91,6 +94,8 @@ export class WbaseView extends TextFileView {
   setViewData(data: string, clear: boolean): void {
     if (!clear && data === this.lastText) return; // 自己刚保存的内容,界面已是最新
     this.lastText = data;
+    this.sourceText = data;
+    this.backupDone = false;
     this.generation++;
     this.revision++;
     try {
@@ -226,6 +231,7 @@ export class WbaseView extends TextFileView {
         case "replaceAll":
           if (this.broken) throw new Error("当前文件无法解析，保存已停止");
           if (m.baseRevision !== undefined && m.baseRevision !== this.revision) throw new Error("文件已被外部更新，请重新载入后重试");
+          await this.backupSource();
           validateWorkbook(m.doc);
           {
             const previous = this.doc;
@@ -271,6 +277,25 @@ export class WbaseView extends TextFileView {
       }
       new Notice(`多维表格操作失败: ${(err as Error).message}`);
       this.push(); // 出错才回推纠正
+    }
+  }
+
+  /** 首次写入前备份原始文件。备份失败时阻止保存，避免不可逆覆盖。 */
+  private async backupSource(): Promise<void> {
+    if (this.backupDone || !this.file) return;
+    if (!this.plugin.settings.autoBackup) { this.backupDone = true; return; }
+    if (!this.sourceText.trim()) { this.backupDone = true; return; }
+    const parent = this.file.parent?.path ?? "";
+    const dir = normalizePath(`${parent ? parent + "/" : ""}.personal-base-table-backups`);
+    const base = this.file.basename.replace(/[\\/:*?"<>|]/g, "-");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const target = normalizePath(`${dir}/${base}.${stamp}.bak.json`);
+    try {
+      if (!(await this.app.vault.adapter.exists(dir))) await this.app.vault.adapter.mkdir(dir);
+      await this.app.vault.adapter.write(target, this.sourceText);
+      this.backupDone = true;
+    } catch (error) {
+      throw new Error(`自动备份失败，已停止保存：${(error as Error).message}`);
     }
   }
 

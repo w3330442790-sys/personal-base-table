@@ -9,7 +9,7 @@ import { FloatingPanel } from "./FloatingPanel";
 import { belowAnchor, type FloatingAnchor } from "./floating";
 
 type Category = "开始" | "插入" | "数据" | "公式" | "视图" | "工具";
-type Panel = "search" | "format" | "details" | "templates" | "history" | "move" | "data";
+type Panel = "search" | "format" | "details" | "templates" | "history" | "move" | "data" | "import";
 export interface Action {
   label: string;
   run: () => void;
@@ -115,6 +115,7 @@ export function WorkbookRibbon({ controls, sheet, selectedRows, selectedCols, se
       { label: "字段设置", run: controls.fields, icon: <Icon name="fields" size={16} /> },
     ] }, { name: "数据工具", actions: [
       { label: "去重", title: "重复项高亮与去重", run: () => onPanel("data"), icon: <Icon name="copy" size={16} /> },
+      { label: "导入", title: "从 CSV / TSV 新建工作表", run: () => onPanel("import"), icon: <Icon name="insertLeft" size={16} /> },
       { label: "条件格式", run: () => onPanel("format"), icon: <Icon name="palette" size={16} /> },
       { label: "跨表移动", run: () => onPanel("move"), disabled: !selectedRows.length, icon: <Icon name="insertRight" size={16} /> },
     ] }, { name: "填充", actions: [

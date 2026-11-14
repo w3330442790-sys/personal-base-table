@@ -1,10 +1,11 @@
 import { useState } from "react";
 
-export type ExportFormat = "csv" | "xls" | "json";
+export type ExportFormat = "csv" | "xls" | "json" | "md";
 
 const FORMATS: { value: ExportFormat; label: string; desc: string }[] = [
   { value: "csv", label: "CSV", desc: "通用表格,Excel / 数值分析都能打开" },
   { value: "xls", label: "Excel", desc: "Excel / WPS 直接打开的 .xls" },
+  { value: "md", label: "Markdown", desc: "带表头的 Markdown 表格,可直接粘贴进笔记" },
   { value: "json", label: "JSON", desc: "完整结构(字段 + 视图 + 记录)" },
 ];
 

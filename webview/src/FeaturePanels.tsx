@@ -4,6 +4,7 @@ import type { StyleMap } from '../../src/core/cell-style';
 import { genId } from '../../src/core/types';
 import { typedValue } from '../../src/core/features';
 import { DataToolsPanel } from './DataToolsPanel';
+import { ImportPanel } from './ImportPanel';
 import { floatingPosition, visibleOwnerBounds, visibleViewport } from './floating';
 import { addSheet, clone as copy, getSheet as sheetAt, workbook as personal, remapRecords } from '../../src/core/workbook';
 
@@ -14,7 +15,7 @@ type Template = { id: string; name: string; data: BaseDoc };
 type Personal = { version: 1; id: string; main: { id: string; name: string }; sheets: Array<{ id: string; name: string; data: BaseDoc }>; order: string[]; templates?: Template[] };
 type ExtendedDoc = BaseDoc & { personalGrid?: Grid; personal?: Personal };
 export interface FeaturePanelsProps {
-  panel: 'search' | 'format' | 'details' | 'templates' | 'history' | 'move' | 'data' | null;
+  panel: 'search' | 'format' | 'details' | 'templates' | 'history' | 'move' | 'data' | 'import' | null;
   onClose: () => void;
   sheet: BaseDoc;
   document: BaseDoc;
@@ -32,6 +33,7 @@ export interface FeaturePanelsProps {
   onNavigate?: (sheetId: string, rowId: string, field: string) => void;
   onOpenLink?: (target: string) => void;
   resolveResource?: (path: string) => string;
+  onImportTable?: (doc: BaseDoc, name: string) => void;
 }
 const text = (value: unknown): string => Array.isArray(value) ? value.map(String).join(', ') : String(value ?? '');
 const grid = (sheet: BaseDoc): Grid => ((sheet as ExtendedDoc).personalGrid ??= {});
@@ -129,7 +131,7 @@ export function HistorySheetDifference({ current, snapshot }: { current: BaseDoc
   </>;
 }
 
-const titles = { search: '查找与替换', format: '条件格式与父行汇总', details: '行详情', templates: '模板', history: '历史快照', move: '跨表移动', data: '重复项与去重' };
+const titles = { search: '查找与替换', format: '条件格式与父行汇总', details: '行详情', templates: '模板', history: '历史快照', move: '跨表移动', data: '重复项与去重', import: '导入表格' };
 export function FeaturePanels(props: FeaturePanelsProps) {
   const panelRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number } | null>(null);
@@ -207,6 +209,7 @@ export function FeaturePanels(props: FeaturePanelsProps) {
       {props.panel === 'history' && <HistoryPanel {...props} />}
       {props.panel === 'move' && <MovePanel key={props.sheetId} {...props} />}
       {props.panel === 'data' && <DataToolsPanel key={props.sheetId} sheet={props.sheet} selectedRows={props.selectedRows} selectedCols={props.selectedCols} transact={props.transact} />}
+      {props.panel === 'import' && props.onImportTable && <ImportPanel onClose={props.onClose} onImportTable={props.onImportTable} />}
     </div>
   </aside>;
 }

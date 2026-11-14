@@ -15,6 +15,7 @@ export function ProjectedWorkbookGrid(props: GridProps & { view: ViewDef }) {
     transact: (...args: Parameters<GridProps['transact']>) => latest.current.transact(...args),
     onHeaderMenu: (...args: Parameters<GridProps['onHeaderMenu']>) => latest.current.onHeaderMenu(...args),
     onResizeColumns: (...args: Parameters<NonNullable<GridProps['onResizeColumns']>>) => latest.current.onResizeColumns?.(...args),
+    onSort: (...args: Parameters<NonNullable<GridProps['onSort']>>) => latest.current.onSort?.(...args),
     onResize: (...args: Parameters<GridProps['onResize']>) => latest.current.onResize(...args),
     onReorderCols: (...args: Parameters<GridProps['onReorderCols']>) => latest.current.onReorderCols(...args),
     onAddField: () => latest.current.onAddField(),
@@ -25,5 +26,5 @@ export function ProjectedWorkbookGrid(props: GridProps & { view: ViewDef }) {
   const rows = useMemo(() => deriveRows(calculatedSheet(props.sheet), props.view), [props.sheet, props.view]);
   return <StableGrid sheet={props.sheet} rows={rows} cols={props.cols} config={props.config} colWidths={props.colWidths}
     frozen={props.frozen} viewId={props.viewId} groupField={props.groupField} canReorder={props.canReorder}
-    command={props.command} sequence={props.sequence} onSequenceChange={props.onSequenceChange} {...callbacks} />;
+    sorts={props.view.sorts} command={props.command} sequence={props.sequence} onSequenceChange={props.onSequenceChange} {...callbacks} />;
 }

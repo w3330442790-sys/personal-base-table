@@ -47,6 +47,15 @@ export function toXLS(cols: string[], rows: Row[], merges: MergeRegion[] = [], s
   return `<html><head><meta charset="utf-8"></head><body><table border="1">${head}${body}</table></body></html>`;
 }
 
+/** 导出为 Markdown 表格，便于直接粘贴到笔记。 */
+export function toMarkdown(cols: string[], rows: Row[]): string {
+  const cell = (value: unknown) => cellText(value).replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+  const head = `| ${cols.map(cell).join(" | ")} |`;
+  const divider = `| ${cols.map(() => "---").join(" | ")} |`;
+  const body = rows.map((r) => `| ${cols.map((c) => cell(r.values[c])).join(" | ")} |`);
+  return [head, divider, ...body, ""].join("\n");
+}
+
 /** 导出为完整 JSON 文档(fields + views + records) */
 export function toJSONDoc(table: BaseTable): string {
   if (table.document) return JSON.stringify(table.document, null, 2) + "\n";

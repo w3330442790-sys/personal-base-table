@@ -10,7 +10,8 @@ import { FieldsPanel } from "./FieldsPanel";
 import { FieldMenu, type FieldAction } from "./FieldMenu";
 import { FieldEditor } from "./FieldEditor";
 import { ExportModal, type ExportFormat } from "./ExportModal";
-import { toCSV, toJSONDoc, toXLS } from "./export";
+import { toCSV, toJSONDoc, toMarkdown, toXLS } from "./export";
+import { nextSort } from "./sort";
 import { Caret, Icon } from "./icons";
 import { defaultConfig, ROW_HEIGHT_PX, type UIConfig } from "./config";
 import { getSheet } from "../../src/core/workbook";
@@ -34,6 +35,7 @@ export interface TableRenderProps {
   onResizeColumns: (widths: Record<string, number>) => void;
   onReorderCols: (from: string, to: string) => void;
   onAddField: () => void;
+  onSort?: (field: string) => void;
   view: ViewDef;
 }
 
@@ -215,6 +217,7 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
     post({ type: "saveViews", views: next });
   };
   const updateView = (patch: Partial<ViewDef>) => saveViews(views.map((v, i) => (i === idx ? { ...v, ...patch } : v)));
+  const toggleSort = (field: string) => updateView({ sorts: nextSort(sorts, field) });
 
   const uniqueName = (base: string) => {
     const names = new Set(views.map((v) => v.name));
@@ -398,7 +401,7 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
     const baseName = (table.path.split(/[\\/]/).pop() || "table").replace(/\.w?base$/, "");
     const formatting = table.document ? readGridMeta(getSheet(table.document, table.sheetId ?? "main")) : undefined;
     const exportRows = table.document ? applyView(toTable(calculatedSheet(getSheet(table.document, table.sheetId ?? "main")), table.path).rows, view, table.fields) : rows;
-    const content = format === "csv" ? toCSV(cols, exportRows) : format === "xls" ? toXLS(cols, exportRows, formatting?.merges, formatting?.cellStyles) : toJSONDoc(table);
+    const content = format === "csv" ? toCSV(cols, exportRows) : format === "xls" ? toXLS(cols, exportRows, formatting?.merges, formatting?.cellStyles) : format === "md" ? toMarkdown(cols, exportRows) : toJSONDoc(table);
     post({ type: "export", defaultName: `${baseName}.${format}`, content });
     setExportOpen(false);
   };
@@ -550,7 +553,7 @@ export function App({ host = defaultHost(), managedHistory, renderTable, workshe
       </div>
 
       <div className={renderTable ? "table-wrap personal-table-wrap" : "table-wrap"}>
-        {renderTable ? renderTable({ rows, cols, config: cellConfig, colWidths, groupField: group?.field, frozen, canReorder, onHeaderMenu: openFieldMenu, onResize: (col, width) => updateView({ colWidths: { ...colWidths, [col]: width } }), onResizeColumns: widths => updateView({ colWidths: { ...colWidths, ...widths } }), onReorderCols, onAddField: () => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }, view }) : <Table
+        {renderTable ? renderTable({ rows, cols, config: cellConfig, colWidths, groupField: group?.field, frozen, canReorder, onHeaderMenu: openFieldMenu, onSort: toggleSort, onResize: (col, width) => updateView({ colWidths: { ...colWidths, [col]: width } }), onResizeColumns: widths => updateView({ colWidths: { ...colWidths, ...widths } }), onReorderCols, onAddField: () => { recordHistory(); post({ type: "addField", name: "新字段", def: { type: "text" }, after: allCols[allCols.length - 1] }); }, view }) : <Table
           fields={table.fields}
           cols={cols}
           rows={rows}

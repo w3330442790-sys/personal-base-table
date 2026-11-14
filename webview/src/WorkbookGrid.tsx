@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import type { BaseDoc, FieldDef, Row } from '../../src/core/types';
+import type { BaseDoc, FieldDef, Row, SortSpec } from '../../src/core/types';
 import { applyPaste, assignParent, conditionalStyle, deleteRows, descendants, fillCells, gridMeta, insertRows, leafSummary, mergeCells, moveSubtree, parseTSV, planPaste, readGridMeta, unmergeCells, selectionClipboard, groupRows, createColumnGroup, visibleGroupColumns } from '../../src/core/features';
 import { columnLabel, calculatedSheet, isFormula, translateFormula } from '../../src/core/formulas';
 import { buildSelectivePaste, applySelectivePaste, makeCellClipboard, encodeCellClipboard, decodeCellClipboard, CELL_CLIPBOARD_MIME, findDuplicateRows, type CellClipboard } from '../../src/core/spreadsheet-data';
@@ -25,6 +25,8 @@ interface Props {
     viewId?: string;
     groupField?: string;
     canReorder?: boolean;
+    sorts?: SortSpec[];
+    onSort?: (field: string) => void;
     transact: (label: string, change: (sheet: BaseDoc) => void, destructive?: boolean) => void;
     onHeaderMenu: (col: string, x: number, y: number, element?: HTMLElement) => void;
     onResizeColumns?: (widths: Record<string, number>) => void;
@@ -626,8 +628,19 @@ export function WorkbookGrid(props: Props) {
     }} onDoubleClickCapture={event => {
         if (Date.now() - lastTouch.current < 800) { event.preventDefault(); event.stopPropagation(); }
     }}><table className={`personal-grid-table ${config.wrapText ? 'wrap' : ''}`} style={{ fontSize: config.fontSize || undefined, width: gridWidth(cols, props.colWidths), minWidth: gridWidth(cols, props.colWidths) }}><colgroup><col style={{ width: headerWidth }}/>{cols.map(c => <col key={c} style={{ width: props.colWidths[c] ?? 160 }}/>)}<col style={{ width: 36 }}/></colgroup>
-      <thead><tr><th className="personal-row-head" aria-label="行操作" style={{ width: headerWidth, minWidth: headerWidth, maxWidth: headerWidth }}>行<span className="personal-col-resize" title="拖动调整行号列宽度" onPointerDown={event => resizeColumn(event, ROW_HEADER_KEY, headerWidth)}/></th>{cols.map((col, ci) => <th key={col} data-field={col} style={frozenStyle(ci)} draggable onDragStart={() => { draggedCol.current = col; }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (draggedCol.current)
-        props.onReorderCols(draggedCol.current, col); draggedCol.current = null; }} onContextMenu={e => { e.preventDefault(); props.onHeaderMenu(col, e.clientX, e.clientY, e.currentTarget); }}><button onClick={e => { const header = e.currentTarget.closest("th")!; const rect = header.getBoundingClientRect(); props.onHeaderMenu(col, rect.left, rect.bottom + 4, header); }}>{columnLabel((fieldIndices.get(col) ?? 0))} {col} ▾</button><span className="personal-col-resize" title="拖动调整列宽，双击适应内容" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); autoColumnWidth([col]); }} onPointerDown={event => resizeColumn(event, col, props.colWidths[col] ?? 160)}/></th>)}<th><button onClick={props.onAddField} title="新增字段">＋</button></th></tr></thead>
+      <thead><tr><th className="personal-row-head" aria-label="行操作" style={{ width: headerWidth, minWidth: headerWidth, maxWidth: headerWidth }}>行<span className="personal-col-resize" title="拖动调整行号列宽度" onPointerDown={event => resizeColumn(event, ROW_HEADER_KEY, headerWidth)}/></th>{cols.map((col, ci) => <th key={col} className="personal-field-head" data-field={col} style={frozenStyle(ci)} draggable onDragStart={() => { draggedCol.current = col; }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (draggedCol.current)
+        props.onReorderCols(draggedCol.current, col); draggedCol.current = null; }} onContextMenu={e => { e.preventDefault(); props.onHeaderMenu(col, e.clientX, e.clientY, e.currentTarget); }}>{(() => {
+            const dir = props.sorts?.find(sort => sort.field === col)?.dir;
+            const openMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+                const header = event.currentTarget.closest("th")!;
+                const rect = header.getBoundingClientRect();
+                props.onHeaderMenu(col, rect.left, rect.bottom + 4, header);
+            };
+            return <>
+                <button className="personal-header-label" title={dir ? `当前${dir === 'asc' ? '升序' : '降序'}，点击切换` : '点击升序，再点降序'} onClick={event => props.onSort ? props.onSort(col) : openMenu(event)}>{columnLabel((fieldIndices.get(col) ?? 0))} {col}{dir ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}</button>
+                <button className="personal-header-menu" aria-label={`${col} 字段菜单`} title="字段菜单" onClick={event => { event.stopPropagation(); openMenu(event); }}>▾</button>
+            </>;
+        })()}<span className="personal-col-resize" title="拖动调整列宽，双击适应内容" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); autoColumnWidth([col]); }} onPointerDown={event => resizeColumn(event, col, props.colWidths[col] ?? 160)}/></th>)}<th><button onClick={props.onAddField} title="新增字段">＋</button></th></tr></thead>
       <tbody>{sourceRows.map((row, sourceIndex) => {
             const ri = rowIndices.get(row.id) ?? -1;
             const parent = meta.parents?.[row.id];

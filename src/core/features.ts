@@ -319,7 +319,9 @@ export function unmergeCells(sheet: BaseDoc, id: string, keepDisplay = false): v
     }
     meta.merges = meta.merges!.filter(m => m.id !== id);
 }
-export function parseTSV(text: string): string[][] {
+export function parseDelimited(text: string, delimiter: string): string[][] {
+    if (!delimiter || delimiter.length !== 1 || /["\r\n]/.test(delimiter))
+        throw new Error('分隔符无效');
     const rows: string[][] = [];
     let row: string[] = [], value = '', quoted = false;
     for (let i = 0; i < text.length; i++) {
@@ -332,10 +334,10 @@ export function parseTSV(text: string): string[][] {
             else
                 quoted = !quoted;
         }
-        else if (!quoted && (char === '\t' || char === '\n' || char === '\r')) {
+        else if (!quoted && (char === delimiter || char === '\n' || char === '\r')) {
             row.push(value);
             value = '';
-            if (char !== '\t') {
+            if (char !== delimiter) {
                 rows.push(row);
                 row = [];
                 if (char === '\r' && text[i + 1] === '\n')
@@ -346,12 +348,16 @@ export function parseTSV(text: string): string[][] {
             value += char;
     }
     if (quoted)
-        throw new Error('剪贴板引号未闭合');
+        throw new Error('引号未闭合');
     if (value !== '' || row.length || !rows.length) {
         row.push(value);
         rows.push(row);
     }
     return rows;
+}
+
+export function parseTSV(text: string): string[][] {
+    return parseDelimited(text, '\t');
 }
 export function typedValue(raw: unknown, def: FieldDef): unknown {
     if (raw == null || raw === '')
