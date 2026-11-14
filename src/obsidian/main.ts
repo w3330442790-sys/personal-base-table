@@ -109,7 +109,12 @@ export default class WeilanxBaseTablePlugin extends Plugin {
   private async onRename(file: TAbstractFile, oldPath: string): Promise<void> {
     if (!this.settings.syncLinksOnRename || !(file instanceof TFile) || file.extension !== "md") return;
     const oldName = oldPath.split("/").pop()!.replace(/\.md$/, "");
-    if (oldName === file.basename) return; // 只是换了目录,[[名字]] 仍然有效
+    const newName = file.basename;
+    if (oldName === newName && oldPath === file.path) return;
+    // Bare [[Note]] links are ambiguous when another note shares the basename.
+    // Full-path links can still be updated safely in that case.
+    const duplicateBasename = this.app.vault.getMarkdownFiles().some((candidate) => candidate.path !== file.path && candidate.basename === oldName);
+    const replaceBare = oldName !== newName && !duplicateBasename;
 
     const open = new Map<string, WbaseView>();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
@@ -122,7 +127,7 @@ export default class WeilanxBaseTablePlugin extends Plugin {
       const view = open.get(f.path);
       if (view) {
         let n = 0;
-        view.applyExternal((doc) => (n = renameLinks(doc, oldName, file.basename)));
+        view.applyExternal((doc) => (n = renameLinks(doc, oldName, newName, { oldPath, newPath: file.path, replaceBare })));
         total += n;
         continue;
       }
@@ -133,12 +138,12 @@ export default class WeilanxBaseTablePlugin extends Plugin {
         } catch {
           return text; // 坏文件不动
         }
-        const n = renameLinks(doc, oldName, file.basename);
+        const n = renameLinks(doc, oldName, newName, { oldPath, newPath: file.path, replaceBare });
         total += n;
         return n ? serializeDoc(doc) : text;
       });
     }
-    if (total) new Notice(t(`已更新 ${total} 处表格链接:[[${oldName}]] → [[${file.basename}]]`, `Updated ${total} table link(s) to [[${file.basename}]]`));
+    if (total) new Notice(t(`已更新 ${total} 处表格链接:[[${oldName}]] → [[${newName}]]`, `Updated ${total} table link(s) to [[${newName}]]`));
   }
 }
 

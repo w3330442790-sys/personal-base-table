@@ -94,7 +94,11 @@ export class WbaseView extends TextFileView {
     this.generation++;
     this.revision++;
     try {
-      this.doc = parseDoc(data, true);
+      const parsed = parseDoc(data, true);
+      // JSON syntax alone is not enough: a syntactically valid file with a
+      // wrong records/fields shape must also fail closed before it can be saved.
+      validateWorkbook(parsed, { allowMissingIds: true });
+      this.doc = parsed;
       this.broken = false;
     } catch (err) {
       this.broken = true;
@@ -136,7 +140,7 @@ export class WbaseView extends TextFileView {
     this.contentEl.empty();
     const box = this.contentEl.createDiv({ cls: "wbt-error" });
     box.createEl("h3", { text: "无法打开这个多维表格" });
-    box.createEl("p", { text: "文件内容不是有效的 JSON,可能是同步冲突或手动编辑出错。为避免覆盖,插件不会写入这个文件。修好 JSON 后会自动重新加载。" });
+    box.createEl("p", { text: "文件内容不是有效的多维表格 JSON,可能是同步冲突、旧版结构或手动编辑出错。为避免覆盖,插件不会写入这个文件。修正内容后会自动重新加载。" });
     box.createEl("pre", { text: err.message });
   }
 

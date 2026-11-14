@@ -47,6 +47,15 @@ export function parseDoc(text: string, strict = false): BaseDoc {
     if (strict) throw new Error("表格文件必须包含 JSON 对象");
     return emptyDoc();
   }
+  // Strict mode must distinguish an omitted optional property from an existing
+  // property with the wrong shape. Coercing the latter to an empty value would
+  // hide corruption and could later overwrite the user's data.
+  if (strict) {
+    if ("fields" in doc && (!doc.fields || typeof doc.fields !== "object" || Array.isArray(doc.fields))) throw new Error("fields 必须是对象");
+    if ("views" in doc && !Array.isArray(doc.views)) throw new Error("views 必须是数组");
+    if ("records" in doc && !Array.isArray(doc.records)) throw new Error("records 必须是数组");
+    if ("personal" in doc && (!doc.personal || typeof doc.personal !== "object" || Array.isArray(doc.personal))) throw new Error("personal 必须是对象");
+  }
   return {
     ...doc,
     fields: doc.fields && typeof doc.fields === "object" ? doc.fields : {},

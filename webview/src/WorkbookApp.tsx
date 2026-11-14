@@ -19,6 +19,7 @@ import { typedValue } from "../../src/core/features";
 import { updateCell } from "../../src/core/ops";
 import { useTabletViewport } from "./useTabletViewport";
 import { TableErrorBoundary } from "./TableErrorBoundary";
+import { browserDraftStorage, clearDraft, readDraft, writeDraft, type DraftStorage } from "./draft";
 
 type Result = Extract<InMsg, { type: "operationResult" }>;
 type FeaturePanel = "search" | "format" | "details" | "templates" | "history" | "move" | "data" | null;
@@ -28,6 +29,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   const revision = useRef(0);
   const identityPersisted = useRef(false);
   const path = useRef("");
+  const draftStorage = useRef<DraftStorage | undefined>(browserDraftStorage());
   const config = useRef(defaultConfig);
   const listeners = useRef(new Set<(message: InMsg) => void>());
   const pending = useRef(new Map<string, { resolve: (result: Result) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>());
@@ -44,7 +46,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [selectedCols, setSelectedCols] = useState<string[]>([]);
-  const [gridCommand, setGridCommand] = useState<{ id: number; kind: string; value?: string | number }>();
+  const [gridCommand, setGridCommand] = useState<{ id: number; kind: string; value?: string | number; rowId?: string; field?: string }>();
   const commandId = useRef(0);
   const publishedSheet = useRef("main");
   const [snapshots, setSnapshots] = useState<SnapshotMetadata[]>([]);
@@ -134,9 +136,21 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       if (JSON.stringify(before) === JSON.stringify(next)) return;
       if (destructive) await createSnapshot(label, before);
       if (owner !== session.current) throw new Error("文件已被外部更新，请重试操作");
-      try { await persist(next); }
+      try {
+        await persist(next);
+        clearDraft(draftStorage.current, path.current);
+      }
       catch (reason) {
         failedDraft.current = { doc: next, owner, revision: revision.current, label, sheetId: affectedSheet, focusSheet: nextActive };
+        writeDraft(draftStorage.current, path.current, {
+          version: 1,
+          doc: next,
+          revision: revision.current,
+          label,
+          sheetId: affectedSheet,
+          focusSheet: nextActive,
+          savedAt: Date.now(),
+        });
         setHasDraft(true);
         throw reason;
       }
@@ -166,7 +180,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       // Restore history position if persistence fails, without discarding either stack.
       if (!owner[direction]()) return;
       const next = owner.document;
-      try { await persist(next); }
+      try { await persist(next); clearDraft(draftStorage.current, path.current); }
       catch (reason) { owner[direction === "undo" ? "redo" : "undo"](); throw reason; }
       if (owner !== session.current) throw new Error("文件已被外部更新，已重新载入");
       publish();
@@ -240,6 +254,22 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
             session.current = new WorkbookSession(incoming, message.config.historyLimit ?? 100);
             generation.current++;
             batch.current = [];
+            if (!message.external && !failedDraft.current) {
+              const stored = readDraft(draftStorage.current, path.current);
+              if (stored) {
+                failedDraft.current = {
+                  doc: stored.doc,
+                  owner: session.current,
+                  revision: stored.revision,
+                  label: stored.label,
+                  sheetId: stored.sheetId,
+                  focusSheet: stored.focusSheet,
+                };
+                const targetSheet = stored.focusSheet ?? stored.sheetId;
+                if (listSheets(stored.doc).some((info) => info.id === targetSheet)) session.current.activeSheetId = targetSheet;
+                setHasDraft(true);
+              }
+            }
             if (message.external) setError("文件已被外部更新，撤销历史已重置");
           } catch (reason) { setError(String(reason)); return; }
         }
@@ -300,6 +330,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       const draft = failedDraft.current!;
       if (draft.owner !== session.current || draft.revision !== revision.current) throw new Error("原文件已更新，请导出待保存副本以保留修改");
       await persist(draft.doc);
+      clearDraft(draftStorage.current, path.current);
       draft.owner.transact(draft.label, doc => replaceAll(doc, draft.doc), draft.sheetId);
       if (draft.focusSheet) draft.owner.activeSheetId = draft.focusSheet;
       failedDraft.current = null;
@@ -308,7 +339,7 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
     })}>重试保存</button><button onClick={() => {
       const draft = failedDraft.current!;
       host.post({ type: "export", defaultName: "工作簿-待保存副本.wbase", content: JSON.stringify(draft.doc, null, 2) + "\n" });
-    }}>导出待保存副本</button><button onClick={() => { failedDraft.current = null; setHasDraft(false); publish(); }}>放弃待保存修改</button></div>}
+    }}>导出待保存副本</button><button onClick={() => { clearDraft(draftStorage.current, path.current); failedDraft.current = null; setHasDraft(false); publish(); }}>放弃待保存修改</button></div>}
     <div className={`workbook-content${busy || hasDraft ? " workbook-busy" : ""}`}>
       <TableErrorBoundary resetKey={document}>
       <App key={active} worksheetMode host={sheetHost.current!} managedHistory={{ canUndo: session.current!.canUndo, canRedo: session.current!.canRedo, undo: () => navigateHistory("undo"), redo: () => navigateHistory("redo") }}
@@ -349,7 +380,17 @@ export function WorkbookApp({ host = defaultHost() }: { host?: Host }) {
       transact={transact} transactDocument={transactDocument} snapshots={snapshots}
       onCreateSnapshot={() => enqueue(() => createSnapshot("手动快照", session.current!.document))}
       onReadSnapshot={id => readSnapshot(id)} onRestoreSnapshot={id => readSnapshot(id, true)}
-      onNavigate={(id, rowId) => { session.current!.activeSheetId = id; setDetailId(rowId); setPanel("details"); publish(); }}
+      onNavigate={(id, rowId, field) => {
+        session.current!.activeSheetId = id;
+        setDetailId(rowId);
+        setSelectedRows([rowId]);
+        setSelectedCols([field]);
+        setPanel(null);
+        publish();
+        // publish() clears stale grid commands when switching sheets, so issue
+        // the locate command after it has selected the destination sheet.
+        setGridCommand({ id: ++commandId.current, kind: "locate", rowId, field });
+      }}
       onOpenLink={target => host.post({ type: "openLink", target })} resolveResource={host.resolveResource}
     />
   </div>;

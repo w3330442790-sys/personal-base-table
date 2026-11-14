@@ -121,7 +121,12 @@ export function removeSheet(doc: BaseDoc, id: string): void {
   }
 }
 
-export function validateWorkbook(doc: BaseDoc): void {
+export interface ValidateWorkbookOptions {
+  /** Legacy files may omit record ids; the session assigns stable ids on load. */
+  allowMissingIds?: boolean;
+}
+
+export function validateWorkbook(doc: BaseDoc, options: ValidateWorkbookOptions = {}): void {
   const sheets = listSheets(doc);
   const seen = new Set<string>();
   for (const info of sheets) {
@@ -129,9 +134,20 @@ export function validateWorkbook(doc: BaseDoc): void {
     seen.add(info.id);
     const sheet = getSheet(doc, info.id);
     if (!sheet.fields || Array.isArray(sheet.fields) || typeof sheet.fields !== "object" || !Array.isArray(sheet.records) || !Array.isArray(sheet.views)) throw new Error("工作表数据结构无效");
+    for (const [name, def] of Object.entries(sheet.fields)) {
+      if (!def || typeof def !== "object" || Array.isArray(def) || typeof def.type !== "string" || !def.type) throw new Error(`字段「${name}」定义无效`);
+    }
+    for (const view of sheet.views) {
+      if (!view || typeof view !== "object" || Array.isArray(view) || typeof view.name !== "string") throw new Error("视图数据结构无效");
+    }
     const ids = new Set<string>();
     for (const rec of sheet.records) {
-      if (typeof rec.id !== "string" || !rec.id || ids.has(rec.id)) throw new Error("行 ID 缺失或重复");
+      if (!rec || typeof rec !== "object" || Array.isArray(rec)) throw new Error("记录数据结构无效");
+      if (typeof rec.id !== "string" || !rec.id) {
+        if (!options.allowMissingIds) throw new Error("行 ID 缺失或重复");
+        continue;
+      }
+      if (ids.has(rec.id)) throw new Error("行 ID 缺失或重复");
       ids.add(rec.id);
     }
   }

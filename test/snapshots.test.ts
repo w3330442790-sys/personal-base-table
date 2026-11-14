@@ -127,7 +127,20 @@ test("snapshot ids, document paths, adapter listings and saved data cannot escap
   const path = [...adapter.files.keys()][0];
   adapter.files.set(path, JSON.stringify({ ...legacy, doc: { fields: {}, records: [] } }));
   await assert.rejects(store.read("目录/旧文件.wbase", legacy.id), /Invalid/);
-  await assert.rejects(store.list("目录/旧文件.wbase"), /Invalid/);
+  assert.deepEqual(await store.list("目录/旧文件.wbase"), []);
+});
+
+test("a corrupt snapshot is quarantined instead of blocking valid history or new snapshots", async () => {
+  const adapter = new MemoryAdapter();
+  const store = new SnapshotStore(adapter, { maxCount: 2 });
+  await store.create("doc", "first", doc());
+  const path = [...adapter.files.keys()][0];
+  adapter.files.set(path, "{broken");
+  assert.deepEqual(await store.list("doc"), []);
+  const second = await store.create("doc", "second", doc());
+  assert.deepEqual(await store.list("doc"), [second]);
+  assert.equal(adapter.files.has(path), true); // keep the bad file for manual recovery
+  assert.deepEqual((await store.read("doc", second.id)).doc, doc());
 });
 
 test("filesystem history reloads and rejects traversal while document saves retain unknown metadata", async () => {

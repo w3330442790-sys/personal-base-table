@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { BaseDoc, FieldDef, Row } from '../../src/core/types';
 import { applyPaste, assignParent, conditionalStyle, deleteRows, descendants, fillCells, gridMeta, insertRows, leafSummary, mergeCells, moveSubtree, parseTSV, planPaste, readGridMeta, unmergeCells, selectionClipboard, groupRows, createColumnGroup, visibleGroupColumns } from '../../src/core/features';
 import { columnLabel, calculatedSheet, isFormula, translateFormula } from '../../src/core/formulas';
@@ -13,8 +13,9 @@ import { belowAnchor, pointerAnchor, type FloatingAnchor } from './floating';
 import { GridTouchGesture } from './grid-touch';
 import { wheelScroll } from './grid-wheel';
 import { gridWidth, rowHeaderWidth, ROW_HEADER_KEY } from './grid-layout';
+import { locateCell } from './locate';
 interface Props {
-    command?: { id: number; kind: string; value?: string | number };
+    command?: { id: number; kind: string; value?: string | number; rowId?: string; field?: string };
     sheet: BaseDoc;
     rows: Row[];
     cols: string[];
@@ -352,6 +353,11 @@ export function WorkbookGrid(props: Props) {
         const target = root.current?.querySelector<HTMLElement>(`td[data-row-index="${point.row}"][data-col-index="${point.col}"] .spreadsheet-cell`);
         (target ?? root.current)?.focus();
     });
+    const revealPoint = (point: Point) => requestAnimationFrame(() => {
+        const cell = root.current?.querySelector<HTMLElement>(`td[data-row-index="${point.row}"][data-col-index="${point.col}"]`);
+        cell?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        focusPoint(point);
+    });
     const navigate = (row: number, col: number, direction: 'up' | 'down' | 'left' | 'right') => {
         const point = { row: Math.max(0, Math.min(rows.length - 1, row + (direction === 'down' ? 1 : direction === 'up' ? -1 : 0))), col: Math.max(0, Math.min(cols.length - 1, col + (direction === 'right' ? 1 : direction === 'left' ? -1 : 0))) };
         choose(point);
@@ -517,6 +523,19 @@ export function WorkbookGrid(props: Props) {
         if (!command || lastCommand.current === command.id) return;
         lastCommand.current = command.id;
         switch (command.kind) {
+            case 'locate': {
+                const position = locateCell(rows, cols, command.rowId, command.field);
+                if (!position) {
+                    setError('该结果不在当前视图的可见范围，请清除筛选、展开分组或显示对应列后重试');
+                    break;
+                }
+                setError('');
+                setMenu(null);
+                setDialog(null);
+                choose(position);
+                revealPoint(position);
+                break;
+            }
             case 'copy': void copy(); break;
             case 'paste': void readPaste('all'); break;
             case 'pasteValues': void readPaste('values'); break;

@@ -10,6 +10,14 @@ test("parseDoc:空文本得到空表,缺失部分兜底", () => {
   assert.deepEqual(parseDoc('{"fields":{"a":{"type":"text"}}}').records, []);
 });
 
+test("parseDoc:严格模式拒绝已有字段的错误结构,而不是静默改成空值", () => {
+  assert.throws(() => parseDoc('{"fields":[],"views":[],"records":[]}', true), /fields 必须是对象/);
+  assert.throws(() => parseDoc('{"fields":{},"views":{},"records":[]}', true), /views 必须是数组/);
+  assert.throws(() => parseDoc('{"fields":{},"views":[],"records":{}}', true), /records 必须是数组/);
+  assert.throws(() => parseDoc('{"fields":{},"views":[],"records":[],"personal":[]}', true), /personal 必须是对象/);
+  assert.deepEqual(parseDoc('{"fields":{},"views":[],"records":[]}', true), { fields: {}, views: [], records: [] });
+});
+
 test("parseDoc:宽松模式吞掉语法错误,严格模式抛出", () => {
   assert.deepEqual(parseDoc("{oops").records, []);
   assert.throws(() => parseDoc("{oops", true));
@@ -73,4 +81,53 @@ test("renameLinks:名字含正则特殊字符", () => {
   const doc: BaseDoc = { fields: {}, views: [], records: [{ id: "r", a: "[[C++ (入门)]]" }] };
   assert.equal(renameLinks(doc, "C++ (入门)", "C++ 入门"), 1);
   assert.equal(doc.records[0]["a"], "[[C++ 入门]]");
+});
+
+test("renameLinks:更新完整路径链接,保留别名、标题和块引用", () => {
+  const doc: BaseDoc = {
+    fields: {},
+    views: [],
+    records: [{
+      id: "r",
+      a: "[[Project/Note]]",
+      b: "[[Project/Note|别名]]",
+      c: "[[Project/Note#标题]]",
+      d: "[[Project/Note#^block]]",
+      e: "![[Project/Note]]",
+      f: "[[Other/Note]]",
+    }],
+  };
+  const n = renameLinks(doc, "Note", "Renamed", { oldPath: "Project/Note.md", newPath: "Archive/Renamed.md" });
+  assert.equal(n, 5);
+  assert.equal(doc.records[0]["a"], "[[Archive/Renamed]]");
+  assert.equal(doc.records[0]["b"], "[[Archive/Renamed|别名]]");
+  assert.equal(doc.records[0]["c"], "[[Archive/Renamed#标题]]");
+  assert.equal(doc.records[0]["d"], "[[Archive/Renamed#^block]]");
+  assert.equal(doc.records[0]["e"], "![[Archive/Renamed]]");
+  assert.equal(doc.records[0]["f"], "[[Other/Note]]");
+});
+
+test("renameLinks:仅移动目录时更新路径链接,不误改裸链接", () => {
+  const doc: BaseDoc = {
+    fields: {},
+    views: [],
+    records: [{ id: "r", a: "[[Project/Note]]", b: "[[Note]]", c: "[[Note|别名]]" }],
+  };
+  const n = renameLinks(doc, "Note", "Note", { oldPath: "Project/Note.md", newPath: "Archive/Note.md", replaceBare: false });
+  assert.equal(n, 1);
+  assert.equal(doc.records[0]["a"], "[[Archive/Note]]");
+  assert.equal(doc.records[0]["b"], "[[Note]]");
+  assert.equal(doc.records[0]["c"], "[[Note|别名]]");
+});
+
+test("renameLinks:同名笔记存在时只改路径链接", () => {
+  const doc: BaseDoc = {
+    fields: {},
+    views: [],
+    records: [{ id: "r", a: "[[Note]]", b: "[[Project/Note]]" }],
+  };
+  const n = renameLinks(doc, "Note", "Renamed", { oldPath: "Project/Note.md", newPath: "Archive/Renamed.md", replaceBare: false });
+  assert.equal(n, 1);
+  assert.equal(doc.records[0]["a"], "[[Note]]");
+  assert.equal(doc.records[0]["b"], "[[Archive/Renamed]]");
 });

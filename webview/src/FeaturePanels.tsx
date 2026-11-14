@@ -264,7 +264,7 @@ function SearchPanel(props: FeaturePanelsProps) {
     <button disabled={!matches.length || matches.some(item => item.invalid)} onClick={() => replace(matches)}>替换全部</button>
     <ErrorMessage message={error} />
     <ol className="feature-results">{matches.map(item => <li key={`${item.sheetId}:${item.rowId}:${item.field}`}>
-      <button className="feature-location" onClick={() => props.onNavigate?.(item.sheetId, item.rowId, item.field)}>{item.sheetName} / {item.rowId} / {item.field}</button>
+      <button className="feature-location" title="定位到此单元格" onClick={() => props.onNavigate?.(item.sheetId, item.rowId, item.field)}>{item.sheetName} / {item.rowId} / {item.field}</button>
       <div className="feature-before">{text(item.before)}</div><div>→ {text(item.after)}</div>
       {item.invalid && <p className="feature-error">{item.invalid}</p>}
       <button disabled={!!item.invalid} onClick={() => replace([item])}>替换此项</button>

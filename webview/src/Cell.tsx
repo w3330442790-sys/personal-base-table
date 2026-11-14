@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { FieldDef } from "../../src/core/types";
 import { tagStyle } from "./config";
@@ -8,6 +8,7 @@ import { useHost } from "./host";
 import { parseWikiLink } from "../../src/core/links";
 import { typedValue } from "../../src/core/features";
 import { isFormula } from "../../src/core/formulas";
+import { safeExternalHref } from "./url";
 
 const CHECK = "✓";
 
@@ -42,8 +43,10 @@ export function CellPreview({ def, value, colorful }: { def: FieldDef; value: un
       const url = (value as string) ?? "";
       const wiki = parseWikiLink(url);
       if (wiki) return <span className="wikilink">{wiki.label}</span>;
+      const href = safeExternalHref(url);
+      if (!href) return <span className="expand-text">{url}</span>;
       return (
-        <a href={url} target="_blank" rel="noreferrer" className="expand-link">
+        <a href={href} target="_blank" rel="noreferrer" className="expand-link">
           {url}
         </a>
       );
@@ -461,11 +464,18 @@ function LinkCell({ value, onCommit }: { value: unknown; onCommit: (v: unknown) 
       </div>
     );
   }
+  const href = safeExternalHref(url);
   return (
     <div className="cellbox cell-link">
-      <a href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-        {url}
-      </a>
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+          {url}
+        </a>
+      ) : (
+        <span className="expand-text" title="仅支持 http、https 或 mailto 链接">
+          {url}
+        </span>
+      )}
       <button className="mini" onClick={() => setEditing(true)} title="编辑">
         ✎
       </button>

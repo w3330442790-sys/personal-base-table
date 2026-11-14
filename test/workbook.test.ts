@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseDoc, serializeDoc, toTable } from "../src/core/doc";
 import * as ops from "../src/core/ops";
-import { WorkbookSession, getSheet, listSheets, addSheet, removeSheet, duplicateSheet } from "../src/core/workbook";
+import { WorkbookSession, getSheet, listSheets, addSheet, removeSheet, duplicateSheet, validateWorkbook } from "../src/core/workbook";
 import type { BaseDoc } from "../src/core/types";
 import { applySheetMessage } from "../src/core/messages";
 import { gridMeta } from "../src/core/features";
@@ -14,6 +14,18 @@ function fixture(): BaseDoc {
     records: [{ id: "r1", Title: "Example", Status: "Todo" }],
   };
 }
+
+test("validateWorkbook rejects malformed field, view and record shapes", () => {
+  assert.throws(() => validateWorkbook({ fields: { A: null } as never, views: [], records: [] }), /字段/);
+  assert.throws(() => validateWorkbook({ fields: {}, views: [null] as never, records: [] }), /视图/);
+  assert.throws(() => validateWorkbook({ fields: {}, views: [], records: [null] as never }), /记录/);
+  assert.throws(() => validateWorkbook({ fields: {}, views: [], records: [{ id: "x" }, { id: "x" }] }), /行 ID/);
+});
+
+test("validateWorkbook can tolerate legacy records without ids during load", () => {
+  assert.doesNotThrow(() => validateWorkbook({ fields: { A: { type: "text" } }, views: [], records: [{ A: "legacy" }] }, { allowMissingIds: true }));
+  assert.throws(() => validateWorkbook({ fields: { A: { type: "text" } }, views: [], records: [{ A: "legacy" }] }), /行 ID/);
+});
 
 test("UI table never shares mutable field or view metadata with its document", () => {
   const doc = fixture();

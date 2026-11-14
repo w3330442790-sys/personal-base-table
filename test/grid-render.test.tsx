@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { WorkbookGrid } from '../webview/src/WorkbookGrid';
 import { HostContext, type Host } from '../webview/src/host';

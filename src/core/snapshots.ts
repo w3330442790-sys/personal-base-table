@@ -84,7 +84,16 @@ export class SnapshotStore {
         throw new Error("Invalid snapshot path in history directory");
       }
       const text = await this.adapter.read(file);
-      entries.push({ snapshot: decode(text, name.slice(0, -5)), path: file, bytes: new TextEncoder().encode(text).length });
+      let snapshot: Snapshot;
+      try {
+        snapshot = decode(text, name.slice(0, -5));
+      } catch {
+        // A sync conflict or interrupted write may leave one bad snapshot.
+        // Keep it on disk for manual recovery, but do not let it block the
+        // valid history or prevent new snapshots from being created.
+        continue;
+      }
+      entries.push({ snapshot, path: file, bytes: new TextEncoder().encode(text).length });
     }
     return entries.sort((a, b) => b.snapshot.createdAt.localeCompare(a.snapshot.createdAt) || b.snapshot.id.localeCompare(a.snapshot.id));
   }
